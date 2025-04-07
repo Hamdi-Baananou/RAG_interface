@@ -49,7 +49,6 @@ Extract material filling additives using this reasoning chain:
       → REASONING: [Step1] Non-standard term → [Step4] Rejected → [Step5] Uncertain
       → MATERIAL FILLING: **NOT FOUND**
     **Output format:**
-    REASONING: [Step analysis summary]
     MATERIAL FILLING: [abbreviations/none/NOT FOUND]
 """
 
@@ -101,7 +100,6 @@ Extract primary polymer material using this reasoning chain:
       → MATERIAL NAME: **NOT FOUND**
 
     **Output format:**
-    REASONING: [Step analysis with ✓/✗ markers]
     MATERIAL NAME: [UPPERCASE]
 """
 
@@ -164,6 +162,5 @@ Determine Pull-To-Seat requirement using this reasoning chain:
     → PULL-TO-SEAT: No
 
   Output format:
-    REASONING: [Key step determinations]
     PULL-TO-SEAT: [Yes/No]
 """

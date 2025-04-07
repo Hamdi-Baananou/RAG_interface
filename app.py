@@ -227,63 +227,106 @@ else:
 
     st.info(f"Running {len(prompts_to_run)} extraction prompts...")
 
-    # Run each prompt and display the result in a card
+    # Create columns for the layout
+    cols = st.columns(2)
+    col_index = 0 # To alternate columns
+
+    # Run each prompt and display the result in a card within columns
     for prompt_name, prompt_text in prompts_to_run.items():
-        # st.subheader(prompt_name) # Remove the simple subheader
+        # --- Select the current column ---
+        current_col = cols[col_index % 2]
+        col_index += 1
 
-        with st.spinner(f"Extracting {prompt_name}..."):
-            extraction_result = "Error during extraction." # Default value
-            try:
-                start_time = time.time()
-                extraction_result = run_extraction(prompt_text, st.session_state.extraction_chain)
-                run_time = time.time() - start_time
-                logger.info(f"Extraction for '{prompt_name}' took {run_time:.2f} seconds.")
+        # --- Process within the selected column ---
+        with current_col:
+            with st.spinner(f"Extracting {prompt_name}..."):
+                extraction_result = "Error during extraction." # Default value
+                try:
+                    start_time = time.time()
+                    extraction_result = run_extraction(prompt_text, st.session_state.extraction_chain)
+                    run_time = time.time() - start_time
+                    logger.info(f"Extraction for '{prompt_name}' took {run_time:.2f} seconds.")
 
-            except Exception as e:
-                logger.error(f"Error during extraction for '{prompt_name}': {e}", exc_info=True)
-                st.error(f"Could not run extraction for {prompt_name}: {e}")
-                extraction_result = f"Error during extraction: {e}" # Update result on error
+                except Exception as e:
+                    logger.error(f"Error during extraction for '{prompt_name}': {e}", exc_info=True)
+                    st.error(f"Could not run extraction for {prompt_name}: {e}")
+                    extraction_result = f"Error during extraction: {e}"
 
-        # --- Card Implementation ---
-        with st.container(border=True): # Use border=True for a card-like effect (Streamlit >= 1.28)
-            # --- Parse the result ---
-            thinking_process = "Not available."
-            display_result = extraction_result # Default if parsing fails
-            think_start_tag = "<think>"
-            think_end_tag = "</think>"
+            # --- Card Implementation ---
+            with st.container(border=True):
+                # --- Parse the result ---
+                thinking_process = "Not available."
+                reasoning_part = "" # Store reasoning separately
+                final_answer_line = extraction_result # Default if parsing fails
+                final_answer_value = extraction_result # Default value for badge
 
-            start_index = extraction_result.find(think_start_tag)
-            end_index = extraction_result.find(think_end_tag)
+                think_start_tag = "<think>"
+                think_end_tag = "</think>"
 
-            if start_index != -1 and end_index != -1 and end_index > start_index:
-                # Extract thinking process, removing the tags
-                thinking_process = extraction_result[start_index + len(think_start_tag):end_index].strip()
-                # Extract the part after </think> as the main result
-                display_result = extraction_result[end_index + len(think_end_tag):].strip()
-                # If display_result is empty after stripping, maybe grab the part before <think>?
-                if not display_result:
-                     display_result = extraction_result[:start_index].strip()
-            else:
-                 # If tags not found, assume the whole thing is the display result
-                 display_result = extraction_result.strip()
+                start_index = extraction_result.find(think_start_tag)
+                end_index = extraction_result.find(think_end_tag)
+
+                raw_result_part = extraction_result # Part containing reasoning/answer
+
+                if start_index != -1 and end_index != -1 and end_index > start_index:
+                    # Extract thinking process
+                    thinking_process = extraction_result[start_index + len(think_start_tag):end_index].strip()
+                    # Get the part after </think>
+                    raw_result_part = extraction_result[end_index + len(think_end_tag):].strip()
+                    # If empty after </think>, maybe grab the part before <think>?
+                    if not raw_result_part:
+                         raw_result_part = extraction_result[:start_index].strip()
+                else:
+                    # If no tags, assume whole result is the raw result part
+                     raw_result_part = extraction_result.strip()
+
+                # Try to split the raw result into reasoning and final answer based on lines
+                lines = raw_result_part.split('\n')
+                # Assume the last non-empty line is the final answer
+                final_answer_line = ""
+                for line in reversed(lines):
+                    if line.strip():
+                        final_answer_line = line.strip()
+                        break
+
+                # Extract the value after the colon for the badge
+                if ':' in final_answer_line:
+                    final_answer_value = final_answer_line.split(':', 1)[-1].strip()
+                else: # If no colon, use the whole line as value
+                    final_answer_value = final_answer_line
+
+                # Consider everything before the final answer line as reasoning (if multi-line)
+                if len(lines) > 1:
+                    reasoning_lines = []
+                    for line in lines:
+                         if line.strip() and line.strip() != final_answer_line:
+                             reasoning_lines.append(line.strip())
+                    reasoning_part = "\n".join(reasoning_lines)
 
 
-            # --- Display Card Content ---
-            st.markdown(f"##### {prompt_name}") # Use markdown for a slightly smaller, bold header
+                # --- Display Card Content ---
+                st.markdown(f"##### {prompt_name}")
 
-            # Display the main result (Reasoning + Final Answer)
-            # Use markdown for potential formatting like bolding if the LLM provides it
-            st.markdown(display_result)
+                # Display the final answer value as a green badge
+                # Simple HTML/CSS badge using Markdown
+                badge_html = f'<span style="background-color: #28a745; color: white; padding: 3px 8px; border-radius: 5px; font-size: 0.9em;">{final_answer_value}</span>'
+                st.markdown(badge_html, unsafe_allow_html=True)
 
-            # Add the expander for the thinking process
-            if thinking_process != "Not available.":
-                with st.expander("Show Thinking Process"):
-                    st.code(thinking_process, language=None) # Use st.code to preserve formatting
-            # Optionally, indicate if thinking process wasn't found
-            # else:
-            #    st.caption("_Thinking process not found in output._")
+                # Add the expander for the thinking process and reasoning
+                if thinking_process != "Not available." or reasoning_part:
+                     with st.expander("Show Details"):
+                         if reasoning_part:
+                              st.markdown("**Reasoning:**")
+                              st.code(reasoning_part, language=None)
+                         if thinking_process != "Not available.":
+                              st.markdown("**Thinking Process:**")
+                              st.code(thinking_process, language=None)
 
-        st.write("") # Add a little vertical space between cards
+
+    # Add a clear float element if the number of cards is odd to prevent layout issues (optional)
+    # if col_index % 2 != 0:
+    #     with cols[1]:
+    #         st.write("") # Placeholder in the empty column
 
     st.success("Automated extraction complete.")
 
