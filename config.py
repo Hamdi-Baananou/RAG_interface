@@ -12,7 +12,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 # --- Model Configuration ---
 # Recommend using Langchain's Groq integration if possible
 # LLM_PROVIDER = "groq" # or "requests" if using raw requests
-LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "llama3-8b-8192") # Reverted to a known good default
+LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "qwen-qwq-32b") # Reverted to a known good default
 # LLM_MODEL_NAME = "qwen-qwq-32b" # Your original choice via requests
 # GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions" # Needed if using raw requests
 
