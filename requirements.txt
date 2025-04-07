@@ -1,11 +1,14 @@
+# requirements.txt
+
 streamlit
-groq
 langchain
-langchain-groq
-langchain-community # For document loaders and vector stores
-pypdf # PDF Loader
-chromadb # Vector Store
-python-dotenv # To load .env file
-tiktoken # Often needed for text splitting/embeddings
-faiss-cpu # Alternative efficient vector store (optional, use if needed)
-# Add other specific dependencies here 
+langchain-community
+langchain-groq  # More direct way to use Groq with LangChain (Optional but recommended)
+pymupdf
+sentence-transformers
+chromadb
+requests
+python-dotenv
+loguru # Or use standard logging
+# tiktoken # Often needed implicitly by langchain text splitters/models, good to add
+# faiss-cpu # Optional alternative vector store
