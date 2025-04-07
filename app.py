@@ -10,6 +10,7 @@ import streamlit as st
 import os
 import time
 from loguru import logger
+import json # Import the json library
 
 # Import project modules
 import config
@@ -245,7 +246,7 @@ st.header("2. Extracted Information")
 if not st.session_state.extraction_chain:
     st.info("Upload and process documents using the sidebar to see extracted results here.")
 else:
-    # Define the prompts to run automatically
+    # Define the prompts to run automatically (using prompt_name as the key)
     prompts_to_run = {
         # Material Properties
         "Material Filling": MATERIAL_PROMPT,
@@ -282,106 +283,78 @@ else:
 
     st.info(f"Running {len(prompts_to_run)} extraction prompts...")
 
-    # Create columns for the layout
     cols = st.columns(2)
-    col_index = 0 # To alternate columns
+    col_index = 0
 
-    # Run each prompt and display the result in a card within columns
     for prompt_name, prompt_text in prompts_to_run.items():
-        # --- Select the current column ---
         current_col = cols[col_index % 2]
         col_index += 1
 
-        # --- Process within the selected column ---
         with current_col:
+            attribute_key = prompt_name # Use the display name as the key for JSON
+            json_result_str = '{"error": "Extraction not run."}' # Default
+
             with st.spinner(f"Extracting {prompt_name}..."):
-                extraction_result = "Error during extraction." # Default value
                 try:
                     start_time = time.time()
-                    extraction_result = run_extraction(prompt_text, st.session_state.extraction_chain)
+                    # *** Pass attribute_key (prompt_name) to run_extraction ***
+                    json_result_str = run_extraction(prompt_text, attribute_key, st.session_state.extraction_chain)
                     run_time = time.time() - start_time
-                    logger.info(f"Extraction for '{prompt_name}' took {run_time:.2f} seconds.")
+                    logger.info(f"Extraction for '{prompt_name}' took {run_time:.2f} seconds. Raw output: {json_result_str}")
 
                 except Exception as e:
                     logger.error(f"Error during extraction for '{prompt_name}': {e}", exc_info=True)
                     st.error(f"Could not run extraction for {prompt_name}: {e}")
-                    extraction_result = f"Error during extraction: {e}"
+                    json_result_str = f'{{"error": "Exception during extraction: {e}"}}'
 
             # --- Card Implementation ---
             with st.container(border=True):
-                # --- Parse the result ---
-                thinking_process = "Not available."
-                reasoning_part = "" # Store reasoning separately
-                final_answer_line = extraction_result # Default if parsing fails
-                final_answer_value = extraction_result # Default value for badge
-
-                think_start_tag = "<think>"
-                think_end_tag = "</think>"
-
-                start_index = extraction_result.find(think_start_tag)
-                end_index = extraction_result.find(think_end_tag)
-
-                raw_result_part = extraction_result # Part containing reasoning/answer
-
-                if start_index != -1 and end_index != -1 and end_index > start_index:
-                    # Extract thinking process
-                    thinking_process = extraction_result[start_index + len(think_start_tag):end_index].strip()
-                    # Get the part after </think>
-                    raw_result_part = extraction_result[end_index + len(think_end_tag):].strip()
-                    # If empty after </think>, maybe grab the part before <think>?
-                    if not raw_result_part:
-                         raw_result_part = extraction_result[:start_index].strip()
-                else:
-                    # If no tags, assume whole result is the raw result part
-                     raw_result_part = extraction_result.strip()
-
-                # Try to split the raw result into reasoning and final answer based on lines
-                lines = raw_result_part.split('\n')
-                # Assume the last non-empty line is the final answer
-                final_answer_line = ""
-                for line in reversed(lines):
-                    if line.strip():
-                        final_answer_line = line.strip()
-                        break
-
-                # Extract the value after the colon for the badge
-                if ':' in final_answer_line:
-                    final_answer_value = final_answer_line.split(':', 1)[-1].strip()
-                else: # If no colon, use the whole line as value
-                    final_answer_value = final_answer_line
-
-                # Consider everything before the final answer line as reasoning (if multi-line)
-                if len(lines) > 1:
-                    reasoning_lines = []
-                    for line in lines:
-                         if line.strip() and line.strip() != final_answer_line:
-                             reasoning_lines.append(line.strip())
-                    reasoning_part = "\n".join(reasoning_lines)
-
-
-                # --- Display Card Content ---
                 st.markdown(f"##### {prompt_name}")
 
-                # Display the final answer value as a green badge
-                # Simple HTML/CSS badge using Markdown
-                badge_html = f'<span style="background-color: #28a745; color: white; padding: 3px 8px; border-radius: 5px; font-size: 0.9em;">{final_answer_value}</span>'
+                # --- Parse the JSON result ---
+                final_answer_value = "Error" # Default badge text
+                parse_error = None
+                try:
+                    # Attempt to parse the JSON string
+                    parsed_json = json.loads(json_result_str)
+                    # Extract the value using the expected attribute_key
+                    if isinstance(parsed_json, dict) and attribute_key in parsed_json:
+                         final_answer_value = str(parsed_json[attribute_key]) # Convert value to string for display
+                    elif isinstance(parsed_json, dict) and "error" in parsed_json:
+                         final_answer_value = f"Error: {parsed_json['error']}"
+                    else:
+                         final_answer_value = "Key not found in JSON"
+                         logger.warning(f"Key '{attribute_key}' not found in parsed JSON: {parsed_json}")
+
+                except json.JSONDecodeError as json_err:
+                    parse_error = json_err
+                    final_answer_value = "Invalid JSON Output"
+                    logger.error(f"Failed to parse JSON for '{prompt_name}'. Error: {json_err}. Raw output: {json_result_str}")
+                except Exception as parse_exc:
+                    parse_error = parse_exc
+                    final_answer_value = "Parsing Error"
+                    logger.error(f"Unexpected error parsing result for '{prompt_name}'. Error: {parse_exc}. Raw output: {json_result_str}")
+
+
+                # --- Display Badge ---
+                # Change badge color based on result
+                badge_color = "#dc3545" # Red for error by default
+                if not parse_error and "error" not in final_answer_value.lower() and "not found" not in final_answer_value.lower() and final_answer_value != "Key not found in JSON":
+                     badge_color = "#28a745" # Green for success
+                elif "not found" in final_answer_value.lower():
+                     badge_color = "#ffc107" # Yellow for "NOT FOUND"
+
+                badge_html = f'<span style="background-color: {badge_color}; color: white; padding: 3px 8px; border-radius: 5px; font-size: 0.9em; word-wrap: break-word; display: inline-block; max-width: 100%;">{final_answer_value}</span>'
                 st.markdown(badge_html, unsafe_allow_html=True)
 
-                # Add the expander for the thinking process and reasoning
-                if thinking_process != "Not available." or reasoning_part:
-                     with st.expander("Show Details"):
-                         if reasoning_part:
-                              st.markdown("**Reasoning:**")
-                              st.code(reasoning_part, language=None)
-                         if thinking_process != "Not available.":
-                              st.markdown("**Thinking Process:**")
-                              st.code(thinking_process, language=None)
+                # --- Expander for Raw Output / Debugging ---
+                # Keep expander simple, showing raw output for now
+                with st.expander("Show Raw Output"):
+                     st.code(json_result_str, language="json")
+                     if parse_error:
+                          st.caption(f"JSON Parsing Error: {parse_error}")
 
-
-    # Add a clear float element if the number of cards is odd to prevent layout issues (optional)
-    # if col_index % 2 != 0:
-    #     with cols[1]:
-    #         st.write("") # Placeholder in the empty column
+                # Thinking process is no longer expected/parsed with this JSON structure
 
     st.success("Automated extraction complete.")
 

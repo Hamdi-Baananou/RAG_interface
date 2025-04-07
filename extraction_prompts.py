@@ -48,7 +48,6 @@ Extract material filling additives using this reasoning chain:
     - **Contains 5% specialty reinforcement**
       → REASONING: [Step1] Non-standard term → [Step4] Rejected → [Step5] Uncertain
       → MATERIAL FILLING: **NOT FOUND**
-      Last check : Material filling describes additives added to the base material in order to influence the mechanical material characteristics. Most common additives are GF (glass-fiber), GB (glass-balls), MF (mineral-fiber) and T (talcum).
     **Output format:**
     MATERIAL FILLING: [abbreviations/none/NOT FOUND]
 """

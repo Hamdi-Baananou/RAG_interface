@@ -196,23 +196,32 @@ def get_answer_from_llm_langchain(question: str, retriever: VectorStoreRetriever
 def create_extraction_chain(retriever, llm):
     """
     Creates a RAG chain specifically for running extraction prompts
-    against retrieved context.
+    against retrieved context and outputting JSON.
     """
     if retriever is None or llm is None:
         logger.error("Retriever or LLM is not initialized for extraction chain.")
         return None
 
-    # Template focused on providing context and instructions
+    # --- NEW TEMPLATE ---
     template = """
-Use the following pieces of retrieved context to perform the extraction task based on the instructions provided.
-Analyze the context carefully and follow the reasoning steps in the instructions if given.
-Provide the output in the format specified by the instructions.
+Use the following pieces of retrieved context to perform the extraction task based on the reasoning steps provided in the Extraction Instructions.
+Analyze the context carefully and follow the reasoning steps precisely.
 
 Context:
 {context}
 
 Extraction Instructions:
 {extraction_instructions}
+
+---
+Final Output Requirement:
+Your final output MUST be a single, valid JSON object containing exactly one key-value pair.
+- The key for the JSON object MUST be the string: "{attribute_key}"
+- The value MUST be the extracted result determined by following the Extraction Instructions, provided as a JSON string. Examples of possible values include "GF, T", "none", "NOT FOUND", "Female", "7.2", "999".
+- Do NOT include any explanations, reasoning, or any text outside of this single JSON object in your response.
+
+Example Output Format:
+{{"{attribute_key}": "extracted_value"}}
 
 Output:
 """
@@ -222,43 +231,59 @@ Output:
         return "\n\n".join(doc.page_content for doc in docs)
 
     # Define the extraction chain using LCEL
-    # Takes 'extraction_instructions' as input, retrieves context, formats, runs LLM
+    # Takes 'extraction_instructions' and 'attribute_key' as input
     extraction_chain = (
         RunnableParallel(
-            {"context": retriever | format_docs, # Retrieve context and format it
-             "extraction_instructions": RunnablePassthrough()} # Pass instructions through
+            # Retrieve context based on instructions (or maybe just a placeholder question?)
+            # Let's retrieve based on the attribute_key to give context relevance
+            {"context": RunnablePassthrough() | (lambda x: retriever.invoke(f"Extract information about {x['attribute_key']}")) | format_docs,
+             "extraction_instructions": RunnablePassthrough(),
+             "attribute_key": RunnablePassthrough() }
         )
+        # Assign the instructions and key to the variables expected by the prompt
+        .assign(extraction_instructions=lambda x: x['extraction_instructions']['extraction_instructions'],
+                attribute_key=lambda x: x['attribute_key']['attribute_key'])
         | prompt
         | llm
         | StrOutputParser()
     )
 
-    logger.info("Extraction RAG chain created successfully.")
+    logger.info("JSON Extraction RAG chain created successfully.")
     return extraction_chain
 
 @logger.catch(reraise=True)
-def run_extraction(extraction_instructions: str, extraction_chain):
+def run_extraction(extraction_instructions: str, attribute_key: str, extraction_chain):
     """
-    Runs a specific extraction prompt/instructions through the extraction RAG chain.
+    Runs a specific extraction prompt/instructions through the JSON extraction RAG chain.
     Args:
         extraction_instructions: The full text of the extraction prompt.
+        attribute_key: The key to use in the output JSON (e.g., "Material Name").
         extraction_chain: The initialized extraction RAG chain.
     Returns:
-        The LLM's response string, or None if an error occurs.
+        The LLM's JSON response string, or an error message string.
     """
     if not extraction_chain:
         logger.error("Extraction chain is not available.")
-        return "Error: Extraction chain is not initialized."
+        return '{"error": "Extraction chain is not initialized."}' # Return error as JSON string
     if not extraction_instructions:
         logger.warning("Received empty extraction instructions.")
-        return "Error: No extraction instructions provided."
+        return '{"error": "No extraction instructions provided."}'
+    if not attribute_key:
+        logger.warning("Received empty attribute key.")
+        return '{"error": "No attribute key provided."}'
 
     try:
-        logger.info(f"Invoking extraction chain with instructions (first 100 chars): '{extraction_instructions[:100]}...'")
-        # The chain expects a dictionary or the input key ('extraction_instructions')
-        response = extraction_chain.invoke(extraction_instructions)
+        logger.info(f"Invoking extraction chain for key: '{attribute_key}'")
+        # Pass both instructions and the key to the chain
+        input_data = {"extraction_instructions": extraction_instructions, "attribute_key": attribute_key}
+        response = extraction_chain.invoke(input_data)
         logger.info("Extraction chain invoked successfully.")
-        return response
+        # Attempt to clean potential markdown ```json ... ``` tags
+        if response.strip().startswith("```json"):
+            response = response.strip()[7:]
+            if response.endswith("```"):
+                response = response[:-3]
+        return response.strip() # Return the raw string, hopefully JSON
     except Exception as e:
         logger.error(f"Error invoking extraction chain: {e}", exc_info=True)
-        return f"An error occurred during extraction: {e}"
+        return f'{{"error": "An error occurred during extraction: {str(e)}"}}' # Return error as JSON string
