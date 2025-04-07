@@ -291,35 +291,55 @@ else:
         col_index += 1
 
         with current_col:
-            attribute_key = prompt_name # Use the display name as the key for JSON
-            json_result_str = '{"error": "Extraction not run."}' # Default
+            attribute_key = prompt_name
+            raw_llm_output = '{"error": "Extraction not run."}' # Default
 
             with st.spinner(f"Extracting {prompt_name}..."):
                 try:
                     start_time = time.time()
-                    # *** Pass attribute_key (prompt_name) to run_extraction ***
-                    json_result_str = run_extraction(prompt_text, attribute_key, st.session_state.extraction_chain)
+                    raw_llm_output = run_extraction(prompt_text, attribute_key, st.session_state.extraction_chain)
                     run_time = time.time() - start_time
-                    logger.info(f"Extraction for '{prompt_name}' took {run_time:.2f} seconds. Raw output: {json_result_str}")
+                    logger.info(f"Extraction for '{prompt_name}' took {run_time:.2f} seconds.") # Removed raw output log here for brevity
 
                 except Exception as e:
-                    logger.error(f"Error during extraction for '{prompt_name}': {e}", exc_info=True)
+                    logger.error(f"Error during extraction call for '{prompt_name}': {e}", exc_info=True)
                     st.error(f"Could not run extraction for {prompt_name}: {e}")
-                    json_result_str = f'{{"error": "Exception during extraction: {e}"}}'
+                    raw_llm_output = f'{{"error": "Exception during extraction call: {e}"}}'
 
             # --- Card Implementation ---
             with st.container(border=True):
                 st.markdown(f"##### {prompt_name}")
 
-                # --- Parse the JSON result ---
+                # --- Parse the raw LLM output ---
+                thinking_process = "Not available."
+                json_string_to_parse = raw_llm_output # Default if no think block
                 final_answer_value = "Error" # Default badge text
                 parse_error = None
+
+                think_start_tag = "<think>"
+                think_end_tag = "</think>"
+
+                start_index = raw_llm_output.find(think_start_tag)
+                end_index = raw_llm_output.find(think_end_tag)
+
+                # --- Separate think block and potential JSON ---
+                if start_index != -1 and end_index != -1 and end_index > start_index:
+                    thinking_process = raw_llm_output[start_index + len(think_start_tag):end_index].strip()
+                    # The potential JSON part is AFTER the think block
+                    json_string_to_parse = raw_llm_output[end_index + len(think_end_tag):].strip()
+                else:
+                    # If no think block found, assume the whole output is the potential JSON
+                    json_string_to_parse = raw_llm_output.strip()
+
+                # --- Attempt to parse the potential JSON part ---
                 try:
-                    # Attempt to parse the JSON string
-                    parsed_json = json.loads(json_result_str)
-                    # Extract the value using the expected attribute_key
+                    # Ensure string is not empty before parsing
+                    if not json_string_to_parse:
+                         raise json.JSONDecodeError("No JSON content found after removing think block.", "", 0)
+
+                    parsed_json = json.loads(json_string_to_parse)
                     if isinstance(parsed_json, dict) and attribute_key in parsed_json:
-                         final_answer_value = str(parsed_json[attribute_key]) # Convert value to string for display
+                         final_answer_value = str(parsed_json[attribute_key])
                     elif isinstance(parsed_json, dict) and "error" in parsed_json:
                          final_answer_value = f"Error: {parsed_json['error']}"
                     else:
@@ -329,32 +349,39 @@ else:
                 except json.JSONDecodeError as json_err:
                     parse_error = json_err
                     final_answer_value = "Invalid JSON Output"
-                    logger.error(f"Failed to parse JSON for '{prompt_name}'. Error: {json_err}. Raw output: {json_result_str}")
+                    logger.error(f"Failed to parse JSON for '{prompt_name}'. Error: {json_err}. String attempted: '{json_string_to_parse}'")
                 except Exception as parse_exc:
                     parse_error = parse_exc
                     final_answer_value = "Parsing Error"
-                    logger.error(f"Unexpected error parsing result for '{prompt_name}'. Error: {parse_exc}. Raw output: {json_result_str}")
-
+                    logger.error(f"Unexpected error parsing result for '{prompt_name}'. Error: {parse_exc}. String attempted: '{json_string_to_parse}'")
 
                 # --- Display Badge ---
-                # Change badge color based on result
                 badge_color = "#dc3545" # Red for error by default
-                if not parse_error and "error" not in final_answer_value.lower() and "not found" not in final_answer_value.lower() and final_answer_value != "Key not found in JSON":
-                     badge_color = "#28a745" # Green for success
+                if not parse_error and "error" not in final_answer_value.lower() and "not found" not in final_answer_value.lower() and "invalid json" not in final_answer_value.lower() and "key not found" not in final_answer_value.lower():
+                    badge_color = "#28a745" # Green for success
                 elif "not found" in final_answer_value.lower():
-                     badge_color = "#ffc107" # Yellow for "NOT FOUND"
+                    badge_color = "#ffc107" # Yellow for "NOT FOUND"
 
                 badge_html = f'<span style="background-color: {badge_color}; color: white; padding: 3px 8px; border-radius: 5px; font-size: 0.9em; word-wrap: break-word; display: inline-block; max-width: 100%;">{final_answer_value}</span>'
                 st.markdown(badge_html, unsafe_allow_html=True)
 
-                # --- Expander for Raw Output / Debugging ---
-                # Keep expander simple, showing raw output for now
-                with st.expander("Show Raw Output"):
-                     st.code(json_result_str, language="json")
+                # --- Expander for Details ---
+                with st.expander("Show Details"):
+                     # Show thinking process if available
+                     if thinking_process != "Not available.":
+                          st.markdown("**Thinking Process:**")
+                          st.code(thinking_process, language=None)
+                     # Show raw JSON string that was attempted parsing
+                     st.markdown("**Raw JSON Output (Attempted Parse):**")
+                     st.code(json_string_to_parse, language="json")
+                     # Show parsing error if occurred
                      if parse_error:
                           st.caption(f"JSON Parsing Error: {parse_error}")
+                     # Show original raw output if different (e.g., if think block was present)
+                     if raw_llm_output != json_string_to_parse:
+                          st.markdown("**Original Raw LLM Output:**")
+                          st.code(raw_llm_output, language=None)
 
-                # Thinking process is no longer expected/parsed with this JSON structure
 
     st.success("Automated extraction complete.")
 
