@@ -16,7 +16,7 @@ pysqlite3-binary # Required by chromadb on Streamlit Cloud for sqlite3 version >
 # tiktoken # Often needed implicitly by langchain text splitters/models, good to add
 # faiss-cpu # Optional alternative vector store
 
-numpy # <-- Add numpy explicitly
+numpy~=1.26.0 # <-- Pin numpy version explicitly
 
 # Pin core ML libraries to potentially compatible versions
 torch~=2.2.0 # Or try 2.1.0 if 2.2 gives issues
