@@ -3,51 +3,8 @@
 # --- Material Properties ---
 
 MATERIAL_PROMPT = """
-Extract material filling additives using this reasoning chain:
-    STEP 1: ADDITIVE IDENTIFICATION
-    - Scan document sections for:
-      ✓ Explicit additive declarations (GF, GB, MF, T)
-      ✓ Mechanical property context clues:
-        * \"reinforced with...\"
-        * \"improved [strength/stiffness] using...\"
-        * \"contains X% [additive]\"
-      ✓ Negative statements: \"no additives\", \"unfilled\"
-    STEP 2: CONTEXT VALIDATION
-    - For each candidate additive:
-      ✓ Confirm direct mechanical purpose:
-        - \"GF30 for stiffness\" → Valid ✓
-        - \"GB colorant\" → Rejected ✗ (non-mechanical)
-      ✗ Reject incidental mentions:
-        - \"MF manufacturing facility\" → Rejected ✗
-    STEP 3: NEGATION CHECK
-    - If explicit \"no additives\" statement is found:
-      ✓ Verify no contradictory mentions.
-      ✓ If confirmed, return **\"none\"**.
-    STEP 4: STANDARDIZATION
-    - Convert equivalents to standard abbreviations:
-      * \"Glass fiber\" → GF
-      * \"Mineral-filled\" → MF
-      * \"Talc-filled\" → T
-      * \"Glass beads\" → GB
-      * \"Mica-filled\" → MF
-    - Reject non-standard or ambiguous terms:
-      * \"Carbon additives\" → **NOT FOUND**
-    STEP 5: CERTAINTY ASSESSMENT
-    - Final check:
-      ✓ At least **one** valid additive with mechanical context.
-      ✓ No ambiguous or non-standard terms.
-      ✓ No conflicting information.
-    - If any doubts exist → **NOT FOUND**.
-    **Examples:**
-    - **PA66-GF30-T15 (improved impact resistance)**
-      → REASONING: [Step1] Identified GF, T with mechanical context → [Step2] Valid → [Step4] Standardized
-      → MATERIAL FILLING: **GF, T**
-    - **Unfilled PPS compound**
-      → REASONING: [Step1] \"Unfilled\" found → [Step3] Negative confirmation
-      → MATERIAL FILLING: **none**
-    - **Contains 5% specialty reinforcement**
-      → REASONING: [Step1] Non-standard term → [Step4] Rejected → [Step5] Uncertain
-      → MATERIAL FILLING: **NOT FOUND**
+Extract material filling additives:
+ Material filling describes additives added to the base material in order to influence the mechanical material characteristics. Most common additives are GF (glass-fiber), GB (glass-balls), MF (mineral-fiber) and T (talcum).
     **Output format:**
     MATERIAL FILLING: [abbreviations/none/NOT FOUND]
 """
@@ -166,64 +123,9 @@ Determine Pull-To-Seat requirement using this reasoning chain:
 """
 
 GENDER_PROMPT = """
-Determine connector gender using this reasoning chain:
+Determine connector gender :
 
-    STEP 1: TERMINAL TYPE IDENTIFICATION
-    - Scan for:
-      ✓ Explicit gender terms: \"male\"/\"female\"/\"unisex\"/\"hybrid\"
-      ✓ Physical descriptions:
-        * \"Pin contacts\" → Male
-        * \"Socket contacts\" → Female
-        * \"Tab-and-slot\" → Hybrid
-      ✓ Cavity specifications:
-        * \"Dual-position\" → Potential Hybrid
-        * \"Shared receptacle\" → Potential Unisex
-
-    STEP 2: CAVITY ARCHITECTURE ANALYSIS
-    - For mixed-gender mentions:
-      ✓ Check cavity configuration:
-        * \"Same cavity accepts both\" → Unisex
-        * \"Separate cavities for each\" → Hybrid
-      ✓ Verify contact positioning:
-        * \"Mating interfaces in single housing\" → Unisex
-        * \"Dedicated header/receptacle sides\" → Hybrid
-
-    STEP 3: MANUFACTURER NOMENCLATURE
-    - Interpret supplier terminology:
-      * \"Plug\" → Typically Male
-      * \"Receptacle\" → Typically Female
-      * \"Combo\" → Likely Hybrid
-    - Cross-validate with part numbers:
-      * \"-M\" suffix → Male
-      * \"-F\" suffix → Female
-
-    STEP 4: CONFLICT RESOLUTION
-    - Priority hierarchy:
-      1. Explicit gender declarations
-      2. Cavity configuration evidence
-      3. Contact type descriptions
-      4. Part number conventions
-    - Reject unverified assumptions
-
-    STEP 5: FINAL VALIDATION
-    - Confirm SINGLE classification:
-      ✓ Pure Male/Female: All cavities same type
-      ✓ Hybrid: Separate gender-specific cavities
-      ✓ Unisex: Mixed in same cavity
-    - Ambiguous? → NOT FOUND
-
-    Examples:
-    \"Socket contacts in all positions\"
-    → REASONING: [Step1] Socket → [Step3] Female → [Step5] Uniform
-    → GENDER: Female
-
-    \"Dual cavity design: pins (A1-A10) + sockets (B1-B10)\"
-    → REASONING: [Step1] Both types → [Step2] Separate cavities → [Step5] Hybrid
-    → GENDER: Hybrid
-
-    \"Bi-directional contacts in shared housing\"
-    → REASONING: [Step1] Mixed → [Step2] Same cavity → [Step5] Unisex
-    → GENDER: Unisex
+    Male or Female or Unisex (both kind of terminal in the same cavity) or Hybrid (different cavities for both kind of terminals in the same connector)
 
     Output format:
     GENDER: [Male/Female/Unisex/Hybrid/NOT FOUND]
@@ -773,61 +675,68 @@ Determine working temperatures using this reasoning chain:
 HOUSING_SEAL_PROMPT = """
 Determine housing seal type using this reasoning chain:
 
-    STEP 1: EXACT TERM SCAN
-    - Search for case-sensitive matches ONLY:
-      ✓ \"Radial Seal\" (capital R, capital S)
-      ✓ \"Interface Seal\" (capital I, capital S)
-    - Immediately reject:
-      ✗ Lowercase variations (\"radial seal\")
-      ✗ Plural/gerund forms (\"Seals\", \"Sealing\")
-      ✗ Combined terms (\"Radial/Interface\")
+STEP 1: TERM SCAN (case-insensitive)
+- Search for matches of:
+  ✓ "Radial Seal"
+  ✓ "Interface Seal"
+- Reject:
+  ✗ Plural/gerund forms ("Seals", "Sealing")
+  ✗ Combined terms ("Radial/Interface", "Radial or Interface")
 
-    STEP 2: SEAL CONTEXT VALIDATION
-    - Confirm matches refer specifically to:
-      ✓ Connector-to-counterpart interface
-      ✓ Environmental sealing function
-      ✗ Internal terminal seals
-      ✗ Secondary locking features
+STEP 2: SEAL CONTEXT VALIDATION
+- Confirm matches refer specifically to:
+  ✓ Connector-to-counterpart interface
+  ✓ Environmental sealing function
+  ✗ Internal terminal seals
+  ✗ Secondary locking features
 
-    STEP 3: CASE-SENSITIVITY VERIFICATION
-    - Character-by-character check:
-      ✓ \"R\" in Radial must be uppercase
-      ✓ \"I\" in Interface must be uppercase
-      ✓ \"S\" in Seal must be uppercase
-    - Reject even minor deviations:
-      ✗ \"Interface seal\" (lowercase S)
-      ✗ \"RADIAL SEAL\" (all caps)
+STEP 3: EXCLUSIVE MATCH RESOLUTION
+- If multiple matches:
+  ✓ Prioritize document hierarchy:
+    • "Primary: Radial Seal" → Select Radial
+    • "Standard: Interface Seal" → Select Interface
+  ✗ Reject ambiguous combinations:
+    • "Available with Radial Seal or Interface Seal"
 
-    STEP 4: EXCLUSIVE MATCH RESOLUTION
-    - If multiple matches:
-      ✓ Prioritize document hierarchy:
-        • \"Primary: Radial Seal\" → Select Radial
-        • \"Standard: Interface Seal\" → Select Interface
-      ✗ Reject ambiguous combinations:
-        • \"Available with Radial Seal or Interface Seal\"
+STEP 4: RING SEAL INTERPRETATION
+- If "Ring Seal" is found (any case), and:
+  ✓ It refers to a connector-to-counterpart sealing function
+  → Map it to Radial Seal
+- Reasoning:
+  • Ring Seals typically function through radial compression
+  • Matches Radial Seal's mechanical behavior
+- Reject if:
+  ✗ Term does not describe housing or counterpart sealing
+  ✗ Mention is unrelated (e.g., O-rings in internal terminals)
 
-    STEP 5: FINAL VALIDATION
-    - Strict requirements:
-      1. Exact term match
-      2. Proper case sensitivity
-      3. Single validated occurrence
-      4. Housing-specific context
+STEP 5: FINAL VALIDATION
+- Strict requirements:
+  1. Term match or valid Ring Seal mapping
+  2. Valid context
+  3. Single validated occurrence
+  4. Housing-specific reference
 
-    Examples:
-    \"Housing-to-counterpart seal: Radial Seal\"
-    → REASONING: [Step1] Match → [Step2] Context → [Step3] Case → Valid
-    → HOUSING SEAL: Radial Seal
+Examples:
+"Housing-to-counterpart seal: radial seal"
+→ REASONING: [Step1] Match → [Step2] Context → Valid
+→ HOUSING SEAL: Radial Seal
 
-    \"interface Seal (P/N RS-456)\"
-    → REASONING: [Step1] Lowercase 'i' → [Step3] Rejected → NOT FOUND
-    → HOUSING SEAL: NOT FOUND
+"interface seal (P/N RS-456)"
+→ REASONING: [Step1] Match → [Step2] Not about housing → Rejected
+→ HOUSING SEAL: NOT FOUND
 
-    \"Radial Seal (primary) + Interface Seal (secondary)\"
-    → REASONING: [Step1] Multiple → [Step4] Hierarchy → Radial
-    → HOUSING SEAL: Radial Seal
+"Radial Seal (primary) + Interface Seal (secondary)"
+→ REASONING: [Step1] Multiple → [Step3] Hierarchy → Radial
+→ HOUSING SEAL: Radial Seal
 
-    Output format:
-    HOUSING SEAL: [Radial Seal/Interface Seal/NOT FOUND]
+"Connector uses a molded ring seal to prevent ingress"
+→ REASONING: [Step4] Ring Seal Detected → [Step2] Context → Valid Mapping
+→ HOUSING SEAL: Radial Seal
+
+Output format:
+REASONING: [Key determinations]
+HOUSING SEAL: [Radial Seal / Interface Seal ]
+
 """
 
 WIRE_SEAL_PROMPT = """
@@ -888,7 +797,7 @@ Determine the Wire Seal type using this reasoning chain:
     → WIRE SEAL: None
 
     Output format:
-    WIRE SEAL: [Single Wire Seal/Injected/Mat Seal/None/NOT FOUND]
+    WIRE SEAL: [Single Wire Seal/Injected/Mat Seal/None]
 """
 
 SEALING_PROMPT = """
@@ -943,7 +852,7 @@ Determine sealing status using this reasoning chain:
     → SEALING: Unsealed
 
     Output format:
-    SEALING: [Sealed/Unsealed/NOT FOUND]
+    SEALING: [Sealed/Unsealed]
 """
 
 SEALING_CLASS_PROMPT = """

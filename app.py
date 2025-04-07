@@ -254,9 +254,6 @@ else:
         # Physical / Mechanical Attributes
         "Pull-to-Seat": PULL_TO_SEAT_PROMPT,
         "Gender": GENDER_PROMPT,
-        "Height (mm)": HEIGHT_MM_PROMPT,
-        "Length (mm)": LENGTH_MM_PROMPT,
-        "Width (mm)": WIDTH_MM_PROMPT,
         "Number of Cavities": NUMBER_OF_CAVITIES_PROMPT,
         "Number of Rows": NUMBER_OF_ROWS_PROMPT,
         "Mechanical Coding": MECHANICAL_CODING_PROMPT,
@@ -285,7 +282,7 @@ else:
 
     cols = st.columns(2)
     col_index = 0
-    SLEEP_INTERVAL_SECONDS = 1.0 # Adjust this value as needed (e.g., 0.5, 1, 2)
+    SLEEP_INTERVAL_SECONDS = 0.5 # Adjust this value as needed (e.g., 0.5, 1, 2)
 
     for prompt_name, prompt_text in prompts_to_run.items():
         current_col = cols[col_index % 2]
