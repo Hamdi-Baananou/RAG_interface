@@ -12,13 +12,15 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 # --- Model Configuration ---
 # Recommend using Langchain's Groq integration if possible
 # LLM_PROVIDER = "groq" # or "requests" if using raw requests
-LLM_MODEL_NAME = "mixtral-8x7b-32768" # Example: Groq offers this
+LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "qwen-qwq-32b") # Example: Groq offers this
 # LLM_MODEL_NAME = "qwen-qwq-32b" # Your original choice via requests
 # GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions" # Needed if using raw requests
 
 # --- Embedding Configuration ---
-EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
-EMBEDDING_MODEL_KWARGS = {'device': 'cpu'} # Or 'cuda' if available and setup
+EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "sentence-transformers/all-MiniLM-L6-v2")
+EMBEDDING_DEVICE = os.getenv("EMBEDDING_DEVICE", "cpu") # Add this line ('cpu' is default, 'cuda' if GPU available and configured)
+NORMALIZE_EMBEDDINGS = True # Add this line (Often recommended for sentence transformers)
+# EMBEDDING_CACHE_DIR = os.getenv("EMBEDDING_CACHE_DIR", "./embedding_cache") # Optional: Specify cache dir
 
 # --- Vector Store Configuration ---
 # Option 1: In-memory (like your original code)
@@ -36,15 +38,15 @@ CHROMA_SETTINGS = ChromaSettings(
 CHROMA_COLLECTION_NAME = "pdf_qa_prod_collection"
 
 # --- Text Splitting Configuration ---
-CHUNK_SIZE = 500
-CHUNK_OVERLAP = 75
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 500))
+CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 75))
 
 # --- Retriever Configuration ---
-RETRIEVER_SEARCH_K = 3 # Number of chunks to retrieve
+RETRIEVER_SEARCH_K = int(os.getenv("RETRIEVER_SEARCH_K", 3)) # Number of chunks to retrieve
 
 # --- LLM Request Configuration ---
-LLM_TEMPERATURE = 0.1
-LLM_MAX_OUTPUT_TOKENS = 1024 # Adjust based on model and expected answer length
+LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", 0.1))
+LLM_MAX_OUTPUT_TOKENS = int(os.getenv("LLM_MAX_OUTPUT_TOKENS", 1024)) # Adjust based on model and expected answer length
 
 # --- Logging ---
 LOG_LEVEL = "INFO" # e.g., DEBUG, INFO, WARNING, ERROR
