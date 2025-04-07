@@ -16,19 +16,14 @@ import config # Import configuration
 @logger.catch(reraise=True) # Automatically log exceptions
 def get_embedding_function():
     """Initializes and returns the HuggingFace embedding function."""
-    logger.info(f"Initializing embedding model: {config.EMBEDDING_MODEL_NAME}")
-    # Ensure model_kwargs uses the configured device
     model_kwargs = {'device': config.EMBEDDING_DEVICE}
-    # You can add other encode_kwargs if needed, e.g., {'normalize_embeddings': True}
     encode_kwargs = {'normalize_embeddings': config.NORMALIZE_EMBEDDINGS}
 
     embeddings = HuggingFaceEmbeddings(
         model_name=config.EMBEDDING_MODEL_NAME,
         model_kwargs=model_kwargs,
         encode_kwargs=encode_kwargs,
-        # cache_folder=config.EMBEDDING_CACHE_DIR # Optional: if you want to specify a cache dir
     )
-    logger.success("Embedding function initialized successfully.")
     return embeddings
 
 # --- ChromaDB Setup and Retrieval ---

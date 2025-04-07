@@ -49,19 +49,32 @@ if 'messages' not in st.session_state:
 
 # --- Global Variables / Initialization ---
 # Initialize embeddings (this is relatively heavy, do it once)
-# Use st.cache_resource for expensive, serializable resources
 @st.cache_resource
 def initialize_embeddings():
-    logger.info("Attempting to initialize embedding function...")
-    try:
-        return get_embedding_function()
-    except Exception as e:
-        logger.error(f"Failed to initialize embeddings: {e}", exc_info=True)
-        st.error(f"Fatal Error: Could not initialize embedding model. Please check model name and network. Error: {e}")
-        st.stop() # Stop the app if embeddings can't load
-        return None
+    # logger.info("Attempting to initialize embedding function...") # Move logging outside if it triggers UI
+    # REMOVE the try-except block that calls st.error
+    # Let exceptions from get_embedding_function propagate
+    embeddings = get_embedding_function()
+    # logger.success("Embedding function initialized successfully.") # Move logging outside if it triggers UI
+    return embeddings
 
-embedding_function = initialize_embeddings()
+# --- Wrap the cached function call in try-except ---
+embedding_function = None
+try:
+    logger.info("Attempting to initialize embedding function...") # Log before calling
+    embedding_function = initialize_embeddings()
+    if embedding_function:
+         logger.success("Embedding function initialized successfully.") # Log after successful call
+except Exception as e:
+    logger.error(f"Failed to initialize embeddings: {e}", exc_info=True)
+    # Display the error OUTSIDE the cached function
+    st.error(f"Fatal Error: Could not initialize embedding model. Please check model name and network. Error: {e}")
+    st.stop() # Stop the app if embeddings can't load
+
+# --- Check if initialization failed ---
+if embedding_function is None and not st.exception: # Check if it failed and st.stop() wasn't called immediately
+     st.error("Embedding function initialization failed. Cannot continue.")
+     st.stop()
 
 # Try loading existing vector store if persistence is enabled
 if st.session_state.retriever is None and config.CHROMA_SETTINGS.is_persistent and embedding_function:
@@ -76,9 +89,11 @@ if st.session_state.retriever is None and config.CHROMA_SETTINGS.is_persistent a
         logger.warning("No existing persistent vector store found or failed to load.")
 
 # --- UI Layout ---
+# Update persistence check to use the config value directly if CHROMA_SETTINGS is causing issues
+persistence_enabled = config.CHROMA_SETTINGS.is_persistent if hasattr(config, 'CHROMA_SETTINGS') else bool(config.CHROMA_PERSIST_DIRECTORY)
 st.title("📄 PDF Question Answering with Groq")
 st.markdown("Upload PDF documents, process them, and ask questions based on their content.")
-st.markdown(f"**Model:** `{config.LLM_MODEL_NAME}` | **Embeddings:** `{config.EMBEDDING_MODEL_NAME}` | **Persistence:** `{'Enabled' if config.CHROMA_SETTINGS.is_persistent else 'Disabled'}`")
+st.markdown(f"**Model:** `{config.LLM_MODEL_NAME}` | **Embeddings:** `{config.EMBEDDING_MODEL_NAME}` | **Persistence:** `{'Enabled' if persistence_enabled else 'Disabled'}`")
 
 # Check for API Key
 if not config.GROQ_API_KEY:
@@ -104,7 +119,7 @@ with st.sidebar:
 
     if process_button and uploaded_files:
         if not embedding_function:
-             st.error("Embeddings failed to initialize. Cannot process documents.")
+             st.error("Embeddings failed to initialize earlier. Cannot process documents.")
         else:
             filenames = [f.name for f in uploaded_files]
             logger.info(f"Starting processing for {len(filenames)} files: {', '.join(filenames)}")
@@ -153,7 +168,7 @@ with st.sidebar:
     st.subheader("Processing Status")
     if st.session_state.retriever and st.session_state.processed_files:
         st.success(f"Ready to answer questions based on: {', '.join(st.session_state.processed_files)}")
-    elif config.CHROMA_SETTINGS.is_persistent and not st.session_state.retriever:
+    elif persistence_enabled and not st.session_state.retriever:
          st.info("No active session. Upload files or restart if persistent store exists.")
     else:
         st.info("Upload and process PDF documents to begin.")
