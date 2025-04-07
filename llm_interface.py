@@ -8,9 +8,9 @@ from langchain.docstore.document import Document
 
 # Recommended: Use LangChain's Groq integration
 from langchain_groq import ChatGroq
-from langchain_core.prompts import ChatPromptTemplate
+from langchain.prompts import PromptTemplate
+from langchain_core.runnables import RunnablePassthrough, RunnableParallel
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough
 
 import config # Import configuration
 
@@ -73,7 +73,7 @@ Context Chunks:
 Question: {question}
 
 Answer:"""
-    prompt = ChatPromptTemplate.from_template(template)
+    prompt = PromptTemplate.from_template(template)
 
     # Build the RAG chain
     rag_chain = (
@@ -223,3 +223,74 @@ Answer:"""
 #     except Exception as e:
 #         logger.error(f"An unexpected error occurred during LLM request: {e}", exc_info=True)
 #         raise RuntimeError(f"An unexpected error occurred: {e}")
+
+# --- NEW: Chain for Automated Extraction ---
+def create_extraction_chain(retriever, llm):
+    """
+    Creates a RAG chain specifically for running extraction prompts
+    against retrieved context.
+    """
+    if retriever is None or llm is None:
+        logger.error("Retriever or LLM is not initialized for extraction chain.")
+        return None
+
+    # Template focused on providing context and instructions
+    template = """
+Use the following pieces of retrieved context to perform the extraction task based on the instructions provided.
+Analyze the context carefully and follow the reasoning steps in the instructions if given.
+Provide the output in the format specified by the instructions.
+
+Context:
+{context}
+
+Extraction Instructions:
+{extraction_instructions}
+
+Output:
+"""
+    prompt = PromptTemplate.from_template(template)
+
+    def format_docs(docs):
+        return "\n\n".join(doc.page_content for doc in docs)
+
+    # Define the extraction chain using LCEL
+    # Takes 'extraction_instructions' as input, retrieves context, formats, runs LLM
+    extraction_chain = (
+        RunnableParallel(
+            {"context": retriever | format_docs, # Retrieve context and format it
+             "extraction_instructions": RunnablePassthrough()} # Pass instructions through
+        )
+        | prompt
+        | llm
+        | StrOutputParser()
+    )
+
+    logger.info("Extraction RAG chain created successfully.")
+    return extraction_chain
+
+@logger.catch(reraise=True)
+def run_extraction(extraction_instructions: str, extraction_chain):
+    """
+    Runs a specific extraction prompt/instructions through the extraction RAG chain.
+    Args:
+        extraction_instructions: The full text of the extraction prompt.
+        extraction_chain: The initialized extraction RAG chain.
+    Returns:
+        The LLM's response string, or None if an error occurs.
+    """
+    if not extraction_chain:
+        logger.error("Extraction chain is not available.")
+        return "Error: Extraction chain is not initialized."
+    if not extraction_instructions:
+        logger.warning("Received empty extraction instructions.")
+        return "Error: No extraction instructions provided."
+
+    try:
+        logger.info(f"Invoking extraction chain with instructions (first 100 chars): '{extraction_instructions[:100]}...'")
+        # The chain expects a dictionary or the input key ('extraction_instructions')
+        response = extraction_chain.invoke(extraction_instructions)
+        logger.info("Extraction chain invoked successfully.")
+        return response
+    except Exception as e:
+        logger.error(f"Error invoking extraction chain: {e}", exc_info=True)
+        return f"An error occurred during extraction: {e}"
