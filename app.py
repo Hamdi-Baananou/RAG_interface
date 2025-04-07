@@ -33,10 +33,11 @@ st.set_page_config(
 
 # --- Logging Configuration ---
 # Configure Loguru logger (can be more flexible than standard logging)
-# logger.add("logs/app_{time}.log", rotation="10 MB", level=config.LOG_LEVEL) # Example: Log to file
-logger.add(lambda msg: st.toast(msg, icon='ℹ️'), level="INFO", filter=lambda record: record["level"].name == "INFO")
-logger.add(lambda msg: st.toast(msg, icon='⚠️'), level="WARNING", filter=lambda record: record["level"].name == "WARNING")
-# Errors will be shown via st.error
+# logger.add("logs/app_{time}.log", rotation="10 MB", level="INFO") # Example: Keep file logging if desired
+# Comment out the lines that add st.toast sinks
+# logger.add(lambda msg: st.toast(msg, icon='ℹ️'), level="INFO", filter=lambda record: record["level"].name == "INFO")
+# logger.add(lambda msg: st.toast(msg, icon='⚠️'), level="WARNING", filter=lambda record: record["level"].name == "WARNING")
+# Errors will still be shown via st.error where used explicitly
 
 # --- Application State ---
 # Use Streamlit's session state to hold persistent data across reruns
