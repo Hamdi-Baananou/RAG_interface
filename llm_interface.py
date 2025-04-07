@@ -192,17 +192,18 @@ def get_answer_from_llm_langchain(question: str, retriever: VectorStoreRetriever
 #         logger.error(f"An unexpected error occurred during LLM request: {e}", exc_info=True)
 #         raise RuntimeError(f"An unexpected error occurred: {e}")
 
-# --- NEW: Chain for Automated Extraction ---
+# --- Revert back to SINGLE Extraction Chain ---
 def create_extraction_chain(retriever, llm):
     """
-    Creates a RAG chain specifically for running extraction prompts
+    Creates a RAG chain specifically for running a SINGLE extraction prompt
     against retrieved context and outputting JSON.
+    (This is the version from before batching was introduced)
     """
     if retriever is None or llm is None:
         logger.error("Retriever or LLM is not initialized for extraction chain.")
         return None
 
-    # --- NEW TEMPLATE ---
+    # --- Use the SINGLE output JSON template ---
     template = """
 Use the following pieces of retrieved context to perform the extraction task based on the reasoning steps provided in the Extraction Instructions.
 Analyze the context carefully and follow the reasoning steps precisely.
@@ -228,19 +229,30 @@ Output:
     prompt = PromptTemplate.from_template(template)
 
     def format_docs(docs):
-        return "\n\n".join(doc.page_content for doc in docs)
+        # Using detailed format_docs might help context
+        context_parts = []
+        for i, doc in enumerate(docs):
+            source = doc.metadata.get('source', 'Unknown')
+            page = doc.metadata.get('page', 'N/A')
+            start_index = doc.metadata.get('start_index', None)
+            chunk_info = f"Chunk {i+1}" + (f" (starts at char {start_index})" if start_index is not None else "")
+            context_parts.append(
+                f"{chunk_info} from '{source}' (Page {page}):\n{doc.page_content}"
+            )
+        return "\n\n---\n\n".join(context_parts)
+        # Or simpler version: return "\n\n".join(doc.page_content for doc in docs)
+
 
     # Define the extraction chain using LCEL
     # Takes 'extraction_instructions' and 'attribute_key' as input
     extraction_chain = (
         RunnableParallel(
-            # Retrieve context based on instructions (or maybe just a placeholder question?)
-            # Let's retrieve based on the attribute_key to give context relevance
+            # Retrieve context based on the attribute_key for better focus
             {"context": RunnablePassthrough() | (lambda x: retriever.invoke(f"Extract information about {x['attribute_key']}")) | format_docs,
              "extraction_instructions": RunnablePassthrough(),
              "attribute_key": RunnablePassthrough() }
         )
-        # Assign the instructions and key to the variables expected by the prompt
+        # Assign the inputs correctly to the prompt variables
         .assign(extraction_instructions=lambda x: x['extraction_instructions']['extraction_instructions'],
                 attribute_key=lambda x: x['attribute_key']['attribute_key'])
         | prompt
@@ -248,23 +260,18 @@ Output:
         | StrOutputParser()
     )
 
-    logger.info("JSON Extraction RAG chain created successfully.")
+    logger.info("SINGLE JSON Extraction RAG chain created successfully.")
     return extraction_chain
 
 @logger.catch(reraise=True)
 def run_extraction(extraction_instructions: str, attribute_key: str, extraction_chain):
     """
     Runs a specific extraction prompt/instructions through the JSON extraction RAG chain.
-    Args:
-        extraction_instructions: The full text of the extraction prompt.
-        attribute_key: The key to use in the output JSON (e.g., "Material Name").
-        extraction_chain: The initialized extraction RAG chain.
-    Returns:
-        The LLM's JSON response string, or an error message string.
+    (This is the version from before batching was introduced)
     """
     if not extraction_chain:
         logger.error("Extraction chain is not available.")
-        return '{"error": "Extraction chain is not initialized."}' # Return error as JSON string
+        return '{"error": "Extraction chain is not initialized."}'
     if not extraction_instructions:
         logger.warning("Received empty extraction instructions.")
         return '{"error": "No extraction instructions provided."}'
@@ -274,16 +281,25 @@ def run_extraction(extraction_instructions: str, attribute_key: str, extraction_
 
     try:
         logger.info(f"Invoking extraction chain for key: '{attribute_key}'")
-        # Pass both instructions and the key to the chain
         input_data = {"extraction_instructions": extraction_instructions, "attribute_key": attribute_key}
         response = extraction_chain.invoke(input_data)
         logger.info("Extraction chain invoked successfully.")
-        # Attempt to clean potential markdown ```json ... ``` tags
+        # Clean potential markdown ```json ... ``` tags
         if response.strip().startswith("```json"):
             response = response.strip()[7:]
             if response.endswith("```"):
                 response = response[:-3]
-        return response.strip() # Return the raw string, hopefully JSON
+        return response.strip()
     except Exception as e:
-        logger.error(f"Error invoking extraction chain: {e}", exc_info=True)
-        return f'{{"error": "An error occurred during extraction: {str(e)}"}}' # Return error as JSON string
+        error_str = str(e).lower()
+        # Add specific check for rate limit errors
+        if "rate limit" in error_str or "too many requests" in error_str or "429" in error_str:
+             logger.error(f"Rate limit hit during extraction for '{attribute_key}': {e}", exc_info=False)
+             return f'{{"error": "API Rate Limit Hit for {attribute_key}"}}'
+        else:
+             logger.error(f"Error invoking extraction chain for '{attribute_key}': {e}", exc_info=True)
+             return f'{{"error": "An error occurred during extraction: {str(e)}"}}'
+
+# --- REMOVE BATCH FUNCTIONS ---
+# def create_batch_extraction_chain(retriever, llm): ...
+# def run_batch_extraction(batch_tasks_details: str, batch_extraction_chain): ...

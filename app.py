@@ -23,8 +23,8 @@ from vector_store import (
 # Updated imports from llm_interface
 from llm_interface import (
     initialize_llm,
-    create_extraction_chain, # New import
-    run_extraction # New import
+    create_extraction_chain, # Revert back to this
+    run_extraction         # Revert back to this
 )
 # Import the prompts
 from extraction_prompts import (
@@ -79,7 +79,7 @@ st.set_page_config(
 # Use Streamlit's session state to hold persistent data across reruns
 if 'retriever' not in st.session_state:
     st.session_state.retriever = None
-if 'extraction_chain' not in st.session_state: # New state variable
+if 'extraction_chain' not in st.session_state:
     st.session_state.extraction_chain = None
 if 'processed_files' not in st.session_state:
     st.session_state.processed_files = [] # Store names of processed files
@@ -134,16 +134,16 @@ if embedding_function is None or llm is None:
      st.stop()
 
 
-# Try loading existing vector store and create extraction chain if retriever exists
+# Try loading existing vector store and create SINGLE extraction chain
 if st.session_state.retriever is None and config.CHROMA_SETTINGS.is_persistent and embedding_function:
     logger.info("Attempting to load existing vector store...")
     st.session_state.retriever = load_existing_vector_store(embedding_function)
     if st.session_state.retriever:
         logger.success("Successfully loaded retriever from persistent storage.")
         st.session_state.processed_files = ["Existing data loaded from disk"]
-        # Create extraction chain if retriever loaded successfully
+        # Create SINGLE extraction chain
         logger.info("Creating extraction chain from loaded retriever...")
-        st.session_state.extraction_chain = create_extraction_chain(st.session_state.retriever, llm)
+        st.session_state.extraction_chain = create_extraction_chain(st.session_state.retriever, llm) # Use single chain function
         if not st.session_state.extraction_chain:
             st.warning("Failed to create extraction chain from loaded retriever.")
     else:
@@ -173,12 +173,12 @@ with st.sidebar:
     process_button = st.button("Process Uploaded Documents", key="process_button", type="primary")
 
     if process_button and uploaded_files:
-        if not embedding_function or not llm: # Check both core components
+        if not embedding_function or not llm:
              st.error("Core components (Embeddings or LLM) failed to initialize earlier. Cannot process documents.")
         else:
-            # Reset state before processing new files
+            # Reset state
             st.session_state.retriever = None
-            st.session_state.extraction_chain = None
+            st.session_state.extraction_chain = None # Reset single chain
             st.session_state.processed_files = []
 
             filenames = [f.name for f in uploaded_files]
@@ -209,7 +209,7 @@ with st.sidebar:
                         if st.session_state.retriever:
                             st.session_state.processed_files = filenames # Update list
                             logger.success("Vector store setup complete. Retriever is ready.")
-                            # --- Create Extraction Chain ---
+                            # --- Create SINGLE Extraction Chain ---
                             with st.spinner("Preparing extraction engine..."):
                                  st.session_state.extraction_chain = create_extraction_chain(st.session_state.retriever, llm)
                             if st.session_state.extraction_chain:
@@ -246,7 +246,7 @@ st.header("2. Extracted Information")
 if not st.session_state.extraction_chain:
     st.info("Upload and process documents using the sidebar to see extracted results here.")
 else:
-    # Define the prompts to run automatically (using prompt_name as the key)
+    # Define the prompts (attribute keys and their instructions)
     prompts_to_run = {
         # Material Properties
         "Material Filling": MATERIAL_PROMPT,
@@ -281,10 +281,11 @@ else:
         "HV Qualified": HV_QUALIFIED_PROMPT
     }
 
-    st.info(f"Running {len(prompts_to_run)} extraction prompts...")
+    st.info(f"Running {len(prompts_to_run)} extraction prompts individually...")
 
     cols = st.columns(2)
     col_index = 0
+    SLEEP_INTERVAL_SECONDS = 1.0 # Adjust this value as needed (e.g., 0.5, 1, 2)
 
     for prompt_name, prompt_text in prompts_to_run.items():
         current_col = cols[col_index % 2]
@@ -292,93 +293,103 @@ else:
 
         with current_col:
             attribute_key = prompt_name
-            raw_llm_output = '{"error": "Extraction not run."}' # Default
+            json_result_str = '{"error": "Extraction not run."}'
 
             with st.spinner(f"Extracting {prompt_name}..."):
                 try:
                     start_time = time.time()
-                    raw_llm_output = run_extraction(prompt_text, attribute_key, st.session_state.extraction_chain)
+                    # Use the single run_extraction function
+                    json_result_str = run_extraction(prompt_text, attribute_key, st.session_state.extraction_chain)
                     run_time = time.time() - start_time
-                    logger.info(f"Extraction for '{prompt_name}' took {run_time:.2f} seconds.") # Removed raw output log here for brevity
+                    logger.info(f"Extraction for '{prompt_name}' took {run_time:.2f} seconds.")
+
+                    # --- ADD DELAY ---
+                    logger.debug(f"Sleeping for {SLEEP_INTERVAL_SECONDS}s before next request...")
+                    time.sleep(SLEEP_INTERVAL_SECONDS)
+                    # ---------------
 
                 except Exception as e:
                     logger.error(f"Error during extraction call for '{prompt_name}': {e}", exc_info=True)
                     st.error(f"Could not run extraction for {prompt_name}: {e}")
-                    raw_llm_output = f'{{"error": "Exception during extraction call: {e}"}}'
+                    json_result_str = f'{{"error": "Exception during extraction call: {e}"}}'
 
             # --- Card Implementation ---
+            # (The card display logic using json.loads and badge remains the same)
             with st.container(border=True):
+                # ... (Parsing logic from previous step) ...
                 st.markdown(f"##### {prompt_name}")
-
-                # --- Parse the raw LLM output ---
-                thinking_process = "Not available."
-                json_string_to_parse = raw_llm_output # Default if no think block
-                final_answer_value = "Error" # Default badge text
+                # --- Parse the JSON result ---
+                thinking_process = "Not available." # No longer expected
+                json_string_to_parse = json_result_str # Parse the direct output
+                final_answer_value = "Error"
                 parse_error = None
 
+                # (Keep the think block removal logic just in case LLM still includes it)
                 think_start_tag = "<think>"
                 think_end_tag = "</think>"
-
-                start_index = raw_llm_output.find(think_start_tag)
+                start_index = raw_llm_output.find(think_start_tag) # Need raw_llm_output defined above loop or fetched again if needed
                 end_index = raw_llm_output.find(think_end_tag)
-
-                # --- Separate think block and potential JSON ---
                 if start_index != -1 and end_index != -1 and end_index > start_index:
                     thinking_process = raw_llm_output[start_index + len(think_start_tag):end_index].strip()
-                    # The potential JSON part is AFTER the think block
                     json_string_to_parse = raw_llm_output[end_index + len(think_end_tag):].strip()
                 else:
-                    # If no think block found, assume the whole output is the potential JSON
                     json_string_to_parse = raw_llm_output.strip()
 
-                # --- Attempt to parse the potential JSON part ---
+
                 try:
                     # Ensure string is not empty before parsing
                     if not json_string_to_parse:
-                         raise json.JSONDecodeError("No JSON content found after removing think block.", "", 0)
+                         raise json.JSONDecodeError("No JSON content found.", "", 0)
 
                     parsed_json = json.loads(json_string_to_parse)
                     if isinstance(parsed_json, dict) and attribute_key in parsed_json:
                          final_answer_value = str(parsed_json[attribute_key])
                     elif isinstance(parsed_json, dict) and "error" in parsed_json:
-                         final_answer_value = f"Error: {parsed_json['error']}"
+                         # Handle specific rate limit error message
+                         if "rate limit" in parsed_json['error'].lower():
+                             final_answer_value = "Rate Limit Hit"
+                         else:
+                             final_answer_value = f"Error: {parsed_json['error']}"
                     else:
-                         final_answer_value = "Key not found in JSON"
+                         final_answer_value = "Key not found"
                          logger.warning(f"Key '{attribute_key}' not found in parsed JSON: {parsed_json}")
 
                 except json.JSONDecodeError as json_err:
                     parse_error = json_err
-                    final_answer_value = "Invalid JSON Output"
+                    final_answer_value = "Invalid JSON"
                     logger.error(f"Failed to parse JSON for '{prompt_name}'. Error: {json_err}. String attempted: '{json_string_to_parse}'")
                 except Exception as parse_exc:
                     parse_error = parse_exc
                     final_answer_value = "Parsing Error"
                     logger.error(f"Unexpected error parsing result for '{prompt_name}'. Error: {parse_exc}. String attempted: '{json_string_to_parse}'")
 
+
                 # --- Display Badge ---
-                badge_color = "#dc3545" # Red for error by default
-                if not parse_error and "error" not in final_answer_value.lower() and "not found" not in final_answer_value.lower() and "invalid json" not in final_answer_value.lower() and "key not found" not in final_answer_value.lower():
+                badge_color = "#dc3545" # Red for error
+                if not parse_error and "error" not in final_answer_value.lower() and "not found" not in final_answer_value.lower() and "invalid json" not in final_answer_value.lower() and "key not found" not in final_answer_value.lower() and "rate limit" not in final_answer_value.lower():
                     badge_color = "#28a745" # Green for success
                 elif "not found" in final_answer_value.lower():
                     badge_color = "#ffc107" # Yellow for "NOT FOUND"
+                elif "rate limit" in final_answer_value.lower():
+                    badge_color = "#6c757d" # Grey for Rate Limit
 
                 badge_html = f'<span style="background-color: {badge_color}; color: white; padding: 3px 8px; border-radius: 5px; font-size: 0.9em; word-wrap: break-word; display: inline-block; max-width: 100%;">{final_answer_value}</span>'
                 st.markdown(badge_html, unsafe_allow_html=True)
 
                 # --- Expander for Details ---
+                # (Keep expander logic as is, showing details like raw output/parsing error)
                 with st.expander("Show Details"):
-                     # Show thinking process if available
+                     # ... (Expander content from previous step) ...
+                     # Show thinking process if available (though less likely now)
                      if thinking_process != "Not available.":
                           st.markdown("**Thinking Process:**")
                           st.code(thinking_process, language=None)
-                     # Show raw JSON string that was attempted parsing
                      st.markdown("**Raw JSON Output (Attempted Parse):**")
                      st.code(json_string_to_parse, language="json")
-                     # Show parsing error if occurred
                      if parse_error:
                           st.caption(f"JSON Parsing Error: {parse_error}")
-                     # Show original raw output if different (e.g., if think block was present)
-                     if raw_llm_output != json_string_to_parse:
+                     # Show original raw output if different
+                     if raw_llm_output != json_string_to_parse: # Need raw_llm_output assigned before this point
                           st.markdown("**Original Raw LLM Output:**")
                           st.code(raw_llm_output, language=None)
 
