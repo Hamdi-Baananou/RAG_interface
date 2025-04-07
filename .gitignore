@@ -1,0 +1,17 @@
+# .gitignore
+
+# Environments
+.env
+venv/
+env/
+*.venv/
+*/__pycache__/
+*.pyc
+
+# IDE / OS files
+.vscode/
+.idea/
+*.DS_Store
+
+# Chroma persistent storage (if used)
+chroma_db*/

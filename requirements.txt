@@ -1,0 +1,11 @@
+streamlit
+groq
+langchain
+langchain-groq
+langchain-community # For document loaders and vector stores
+pypdf # PDF Loader
+chromadb # Vector Store
+python-dotenv # To load .env file
+tiktoken # Often needed for text splitting/embeddings
+faiss-cpu # Alternative efficient vector store (optional, use if needed)
+# Add other specific dependencies here 
