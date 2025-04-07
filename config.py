@@ -55,3 +55,11 @@ LOG_LEVEL = "INFO" # e.g., DEBUG, INFO, WARNING, ERROR
 if not GROQ_API_KEY:
     # In a real app, might raise specific error or handle differently
     print("Warning: GROQ_API_KEY not found in environment variables.")
+
+# --- Simplified CHROMA_SETTINGS attribute for app.py check ---
+# Define a simple object or dictionary that app.py can check for is_persistent
+class SimpleChromaSettings:
+    def __init__(self, persistent):
+        self.is_persistent = persistent
+
+CHROMA_SETTINGS = SimpleChromaSettings(is_persistent)
