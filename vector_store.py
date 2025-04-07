@@ -43,113 +43,116 @@ def get_chroma_client():
         logger.success("Chroma client initialized.")
     return _chroma_client
 
+# --- Vector Store Setup ---
 @logger.catch(reraise=True)
-def setup_vector_store(documents: List[Document], embeddings) -> Optional[VectorStoreRetriever]:
+def setup_vector_store(
+    documents: List[Document],
+    embedding_function,
+) -> Optional[VectorStoreRetriever]:
     """
-    Sets up the Chroma vector store with the provided documents.
-    Deletes the collection if it already exists before adding new documents.
-
+    Sets up the Chroma vector store. Creates a new one if it doesn't exist,
+    or potentially adds to an existing one (current logic replaces).
     Args:
-        documents: List of split Document objects.
-        embeddings: The embedding function to use.
-
+        documents: List of Langchain Document objects.
+        embedding_function: The embedding function to use.
     Returns:
-        A Langchain VectorStoreRetriever instance or None if setup fails.
+        A VectorStoreRetriever object or None if setup fails.
     """
     if not documents:
-        logger.warning("No documents provided to setup_vector_store. Skipping setup.")
+        logger.warning("No documents provided to setup_vector_store.")
+        return None
+    if not embedding_function:
+        logger.error("Embedding function is not available for setup_vector_store.")
         return None
 
-    client = get_chroma_client()
-    collection_name = config.CHROMA_COLLECTION_NAME
+    persist_directory = config.CHROMA_PERSIST_DIRECTORY
+    collection_name = config.COLLECTION_NAME
 
-    # Check if collection exists and delete it (ensures fresh start)
+    logger.info(f"Setting up vector store. Persistence directory: '{persist_directory}', Collection: '{collection_name}'")
+
+    # Check if the directory exists, maybe Chroma needs it? (Optional check)
+    # if persist_directory and not os.path.exists(persist_directory):
+    #     logger.info(f"Creating persistence directory: {persist_directory}")
+    #     os.makedirs(persist_directory)
+
     try:
-        existing_collections = [col.name for col in client.list_collections()]
-        if collection_name in existing_collections:
-            logger.warning(f"Collection '{collection_name}' already exists. Deleting it...")
-            client.delete_collection(name=collection_name)
-            logger.success(f"Collection '{collection_name}' deleted.")
-        else:
-             logger.info(f"Collection '{collection_name}' does not exist yet.")
+        # If persisting, Chroma.from_documents handles creation and persistence directly
+        # when the persist_directory argument is provided.
+        logger.info(f"Creating/Updating vector store '{collection_name}' with {len(documents)} document chunks...")
 
-    except Exception as e:
-        logger.error(f"Error managing existing collection '{collection_name}': {e}", exc_info=True)
-        # Depending on requirements, you might want to stop or try to continue
-        # For this example, we'll try to proceed assuming deletion is best effort
-
-    # Create the vector store using Langchain's Chroma helper
-    logger.info(f"Creating new vector store '{collection_name}' with {len(documents)} document chunks...")
-    try:
+        # *** Add persist_directory argument here ***
         vector_store = Chroma.from_documents(
             documents=documents,
-            embedding=embeddings,
+            embedding=embedding_function,
             collection_name=collection_name,
-            client=client,
-            # persist_directory is handled by the client settings now if persistent
-            # persist_directory=config.CHROMA_PERSIST_DIRECTORY if config.CHROMA_SETTINGS.is_persistent else None
+            persist_directory=persist_directory # <-- This is the crucial addition
         )
-        if config.CHROMA_SETTINGS.is_persistent:
-             logger.info("Persisting vector store...")
-             vector_store.persist() # Explicitly persist if using Langchain wrapper with persistent client
 
-        logger.success(f"Successfully added {len(documents)} chunks to collection '{collection_name}'.")
+        # Ensure persistence after creation/update
+        if persist_directory:
+            logger.info(f"Persisting vector store to directory: {persist_directory}")
+            vector_store.persist() # Explicitly call persist just in case
 
-        retriever = vector_store.as_retriever(
-            search_kwargs={"k": config.RETRIEVER_SEARCH_K}
-        )
-        logger.success(f"Chroma retriever created with k={config.RETRIEVER_SEARCH_K}.")
-        return retriever
+        logger.success(f"Vector store '{collection_name}' created/updated and persisted successfully.")
+        # Return the retriever
+        return vector_store.as_retriever(search_kwargs={"k": config.RETRIEVER_K})
 
     except Exception as e:
         logger.error(f"Failed to create or populate Chroma vector store '{collection_name}': {e}", exc_info=True)
         return None
 
+# --- Load Existing Vector Store ---
 @logger.catch(reraise=True)
-def load_existing_vector_store(embeddings) -> Optional[VectorStoreRetriever]:
+def load_existing_vector_store(embedding_function) -> Optional[VectorStoreRetriever]:
     """
-    Loads an existing persistent Chroma vector store.
-
+    Loads an existing Chroma vector store from the persistent directory.
     Args:
-        embeddings: The embedding function to use.
-
+        embedding_function: The embedding function to use.
     Returns:
-        A Langchain VectorStoreRetriever instance or None if store doesn't exist or fails to load.
+        A VectorStoreRetriever object if the store exists and loads, otherwise None.
     """
-    if not config.CHROMA_SETTINGS.is_persistent or not config.CHROMA_PERSIST_DIRECTORY:
-        logger.warning("Cannot load existing store: Persistence is not enabled in config.")
+    persist_directory = config.CHROMA_PERSIST_DIRECTORY
+    collection_name = config.COLLECTION_NAME
+
+    if not persist_directory:
+        logger.warning("Persistence directory not configured. Cannot load existing store.")
+        return None
+    if not embedding_function:
+        logger.error("Embedding function is not available for load_existing_vector_store.")
         return None
 
-    client = get_chroma_client()
-    collection_name = config.CHROMA_COLLECTION_NAME
+    if not os.path.exists(persist_directory):
+         logger.warning(f"Persistence directory '{persist_directory}' does not exist. Cannot load.")
+         return None
 
-    # Check if collection exists
-    try:
-        existing_collections = [col.name for col in client.list_collections()]
-        if collection_name not in existing_collections:
-            logger.warning(f"Persistent collection '{collection_name}' not found in directory '{config.CHROMA_PERSIST_DIRECTORY}'. Cannot load.")
-            return None
-        logger.info(f"Found existing collection '{collection_name}'. Loading...")
-
-    except Exception as e:
-         logger.error(f"Error checking for existing collection '{collection_name}': {e}", exc_info=True)
-         return None # Can't be sure if it exists
+    logger.info(f"Attempting to load existing vector store from: '{persist_directory}', Collection: '{collection_name}'")
 
     try:
         vector_store = Chroma(
+            persist_directory=persist_directory,
+            embedding_function=embedding_function,
             collection_name=collection_name,
-            embedding_function=embeddings,
-            client=client,
-            persist_directory=config.CHROMA_PERSIST_DIRECTORY
         )
-        retriever = vector_store.as_retriever(
-            search_kwargs={"k": config.RETRIEVER_SEARCH_K}
-        )
-        logger.success(f"Successfully loaded existing vector store '{collection_name}'.")
-        return retriever
+        # Simple check to see if it loaded something (e.g., count items)
+        # Note: .count() might not exist directly, use a different check if needed
+        # A simple successful initialization might be enough indication
+        # try:
+        #     count = vector_store._collection.count() # Example internal access, might change
+        #     logger.info(f"Successfully loaded collection '{collection_name}' with {count} items.")
+        # except Exception:
+        #      logger.warning(f"Loaded collection '{collection_name}', but could not verify item count.")
+
+        logger.success(f"Successfully loaded vector store '{collection_name}'.")
+        return vector_store.as_retriever(search_kwargs={"k": config.RETRIEVER_K})
 
     except Exception as e:
-        logger.error(f"Failed to load existing Chroma vector store '{collection_name}': {e}", exc_info=True)
+        # This exception block might catch cases where the collection *within* the directory doesn't exist
+        # or other Chroma loading errors.
+        logger.warning(f"Failed to load existing vector store '{collection_name}' from '{persist_directory}': {e}", exc_info=False) # Log less verbosely maybe
+        # Log specific known issues like collection not found separately if possible
+        if "does not exist" in str(e).lower(): # Basic check
+             logger.warning(f"Persistent collection '{collection_name}' not found in directory '{persist_directory}'. Cannot load.")
+
         return None
 
 # Add this import at the top of vector_store.py
