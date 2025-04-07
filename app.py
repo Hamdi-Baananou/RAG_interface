@@ -1,3 +1,10 @@
+# --- Force python to use pysqlite3 based on chromadb docs ---
+# This override MUST happen before any other imports that might import sqlite3
+__import__('pysqlite3')
+import sys
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+# --- End override ---
+
 # app.py
 import streamlit as st
 import os
