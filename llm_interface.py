@@ -14,6 +14,29 @@ from langchain_core.output_parsers import StrOutputParser
 
 import config # Import configuration
 
+# --- ADD THIS FUNCTION BACK ---
+@logger.catch(reraise=True)
+def initialize_llm():
+    """Initializes and returns the Groq LLM client."""
+    if not config.GROQ_API_KEY:
+        logger.error("GROQ_API_KEY not found.")
+        raise ValueError("GROQ_API_KEY is not set in the environment variables.")
+
+    try:
+        llm = ChatGroq(
+            temperature=config.LLM_TEMPERATURE,
+            groq_api_key=config.GROQ_API_KEY, # Make sure config has GROQ_API_KEY
+            model_name=config.LLM_MODEL_NAME,
+            max_tokens=config.LLM_MAX_OUTPUT_TOKENS # Make sure config has LLM_MAX_OUTPUT_TOKENS
+        )
+        logger.info(f"Groq LLM initialized with model: {config.LLM_MODEL_NAME}")
+        return llm
+    except Exception as e:
+        logger.error(f"Failed to initialize Groq LLM: {e}")
+        raise ConnectionError(f"Could not initialize Groq LLM: {e}")
+# --- END OF FUNCTION TO ADD BACK ---
+
+
 # --- Option 1: Using LangChain's Groq Integration (Recommended) ---
 
 def format_docs(docs: List[Document]) -> str:
@@ -42,65 +65,11 @@ def get_answer_from_llm_langchain(question: str, retriever: VectorStoreRetriever
     Returns:
         The generated answer string, or None if an error occurs.
     """
-    if not config.GROQ_API_KEY:
-        logger.error("Groq API key is not configured.")
-        raise ValueError("Groq API Key is missing.")
-
-    logger.info(f"Initializing Groq LLM: {config.LLM_MODEL_NAME}")
-    try:
-        llm = ChatGroq(
-            temperature=config.LLM_TEMPERATURE,
-            model_name=config.LLM_MODEL_NAME,
-            max_tokens=config.LLM_MAX_OUTPUT_TOKENS,
-            # api_key=config.GROQ_API_KEY # Handled automatically if GROQ_API_KEY env var is set
-        )
-    except Exception as e:
-         logger.error(f"Failed to initialize ChatGroq: {e}", exc_info=True)
-         raise ConnectionError(f"Could not initialize Groq LLM: {e}")
-
-
-    # Define the prompt template
-    template = """You are a helpful assistant. Answer the user's question based *only* on the provided context chunks from PDF documents.
-If the context doesn't contain the answer, state that you cannot answer based on the provided information.
-When possible, mention the source document and page number (e.g., 'According to document X, page Y...') where the information was found.
-Do not make up information or answer based on prior knowledge outside the context.
-
-Context Chunks:
----------------------
-{context}
----------------------
-
-Question: {question}
-
-Answer:"""
-    prompt = PromptTemplate.from_template(template)
-
-    # Build the RAG chain
-    rag_chain = (
-        {"context": retriever | format_docs, "question": RunnablePassthrough()}
-        | prompt
-        | llm
-        | StrOutputParser()
-    )
-
-    logger.info(f"Invoking RAG chain for question: {question[:100]}...")
-    try:
-        answer = rag_chain.invoke(question)
-        logger.success("Successfully received answer from LLM.")
-        return answer.strip() if answer else "The LLM returned an empty answer."
-
-    except Exception as e:
-        # Catch potential API errors, rate limits, etc. from Langchain's execution
-        logger.error(f"Error invoking RAG chain: {e}", exc_info=True)
-        # You might want to inspect the exception type for specific handling
-        if "authentication" in str(e).lower():
-             raise PermissionError("Groq API authentication failed. Check your key.")
-        elif "rate limit" in str(e).lower():
-             raise ConnectionAbortedError("Groq API rate limit exceeded. Please wait.")
-        elif "context length" in str(e).lower() or "too large" in str(e).lower():
-             raise ValueError("Input is too large for the model's context window, even after splitting.")
-        else:
-             raise RuntimeError(f"Failed to get answer from LLM: {e}")
+    # This function relies on initialize_llm() being available, but doesn't call it directly now
+    # because app.py initializes the LLM and passes it to create_extraction_chain
+    # We can actually remove this function if ONLY extraction is needed.
+    # For now, just ensure initialize_llm exists for app.py to call.
+    pass # Keep as placeholder or remove if unused
 
 
 # --- Option 2: Using Raw Requests (Your original approach, adapted) ---
