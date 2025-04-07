@@ -27,9 +27,37 @@ from llm_interface import (
 )
 # Import the prompts
 from extraction_prompts import (
+    # Material Properties
     MATERIAL_PROMPT,
     MATERIAL_NAME_PROMPT,
-    PULL_TO_SEAT_PROMPT
+    # Physical / Mechanical Attributes
+    PULL_TO_SEAT_PROMPT,
+    GENDER_PROMPT,
+    HEIGHT_MM_PROMPT,
+    LENGTH_MM_PROMPT,
+    WIDTH_MM_PROMPT,
+    NUMBER_OF_CAVITIES_PROMPT,
+    NUMBER_OF_ROWS_PROMPT,
+    MECHANICAL_CODING_PROMPT,
+    COLOUR_PROMPT,
+    COLOUR_CODING_PROMPT,
+    # Sealing & Environmental
+    WORKING_TEMPERATURE_PROMPT,
+    HOUSING_SEAL_PROMPT,
+    WIRE_SEAL_PROMPT,
+    SEALING_PROMPT,
+    SEALING_CLASS_PROMPT,
+    # Terminals & Connections
+    CONTACT_SYSTEMS_PROMPT,
+    TERMINAL_POSITION_ASSURANCE_PROMPT,
+    CONNECTOR_POSITION_ASSURANCE_PROMPT,
+    CLOSED_CAVITIES_PROMPT,
+    # Assembly & Type
+    PRE_ASSEMBLED_PROMPT,
+    CONNECTOR_TYPE_PROMPT,
+    SET_KIT_PROMPT,
+    # Specialized Attributes
+    HV_QUALIFIED_PROMPT
 )
 
 
@@ -219,10 +247,37 @@ if not st.session_state.extraction_chain:
 else:
     # Define the prompts to run automatically
     prompts_to_run = {
+        # Material Properties
         "Material Filling": MATERIAL_PROMPT,
         "Material Name": MATERIAL_NAME_PROMPT,
-        "Pull-to-Seat": PULL_TO_SEAT_PROMPT
-        # Add more prompts here by importing them and adding to the dict
+        # Physical / Mechanical Attributes
+        "Pull-to-Seat": PULL_TO_SEAT_PROMPT,
+        "Gender": GENDER_PROMPT,
+        "Height (mm)": HEIGHT_MM_PROMPT,
+        "Length (mm)": LENGTH_MM_PROMPT,
+        "Width (mm)": WIDTH_MM_PROMPT,
+        "Number of Cavities": NUMBER_OF_CAVITIES_PROMPT,
+        "Number of Rows": NUMBER_OF_ROWS_PROMPT,
+        "Mechanical Coding": MECHANICAL_CODING_PROMPT,
+        "Colour": COLOUR_PROMPT,
+        "Colour Coding": COLOUR_CODING_PROMPT,
+        # Sealing & Environmental
+        "Working Temperature": WORKING_TEMPERATURE_PROMPT,
+        "Housing Seal": HOUSING_SEAL_PROMPT,
+        "Wire Seal": WIRE_SEAL_PROMPT,
+        "Sealing": SEALING_PROMPT,
+        "Sealing Class": SEALING_CLASS_PROMPT,
+        # Terminals & Connections
+        "Contact Systems": CONTACT_SYSTEMS_PROMPT,
+        "Terminal Position Assurance": TERMINAL_POSITION_ASSURANCE_PROMPT,
+        "Connector Position Assurance": CONNECTOR_POSITION_ASSURANCE_PROMPT,
+        "Closed Cavities": CLOSED_CAVITIES_PROMPT,
+        # Assembly & Type
+        "Pre-Assembled": PRE_ASSEMBLED_PROMPT,
+        "Type of Connector": CONNECTOR_TYPE_PROMPT,
+        "Set/Kit": SET_KIT_PROMPT,
+        # Specialized Attributes
+        "HV Qualified": HV_QUALIFIED_PROMPT
     }
 
     st.info(f"Running {len(prompts_to_run)} extraction prompts...")
