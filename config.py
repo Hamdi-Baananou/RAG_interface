@@ -1,7 +1,7 @@
 # config.py
 import os
 from dotenv import load_dotenv
-from chromadb.config import Settings as ChromaSettings
+# from chromadb.config import Settings as ChromaSettings # <-- REMOVE OR COMMENT OUT this import
 
 # Load environment variables from .env file
 load_dotenv()
@@ -12,7 +12,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 # --- Model Configuration ---
 # Recommend using Langchain's Groq integration if possible
 # LLM_PROVIDER = "groq" # or "requests" if using raw requests
-LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "qwen-qwq-32b") # Example: Groq offers this
+LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "llama3-8b-8192") # Reverted to a known good default
 # LLM_MODEL_NAME = "qwen-qwq-32b" # Your original choice via requests
 # GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions" # Needed if using raw requests
 
@@ -23,33 +23,26 @@ NORMALIZE_EMBEDDINGS = True # Add this line (Often recommended for sentence tran
 # EMBEDDING_CACHE_DIR = os.getenv("EMBEDDING_CACHE_DIR", "./embedding_cache") # Optional: Specify cache dir
 
 # --- Vector Store Configuration ---
-# Option 1: In-memory (like your original code)
-# CHROMA_SETTINGS = ChromaSettings(is_persistent=False)
-# CHROMA_PERSIST_DIRECTORY = None # Not needed for in-memory
+# Define the persistence directory (can be None for in-memory)
+CHROMA_PERSIST_DIRECTORY = os.getenv("CHROMA_PERSIST_DIRECTORY", "./chroma_db_prod") # Use consistent variable name
+COLLECTION_NAME = os.getenv("COLLECTION_NAME", "pdf_qa_prod_collection") # Use the name expected by vector_store.py
 
-# Option 2: Persistent storage
-CHROMA_PERSIST_DIRECTORY = "./chroma_db_prod"
-CHROMA_SETTINGS = ChromaSettings(
-    is_persistent=True,
-    persist_directory=CHROMA_PERSIST_DIRECTORY,
-    anonymized_telemetry=False # Optional: Disable telemetry
-)
-
-CHROMA_COLLECTION_NAME = "pdf_qa_prod_collection"
+# *** Calculate the is_persistent flag ***
+is_persistent = bool(CHROMA_PERSIST_DIRECTORY) # True if directory is set, False otherwise
 
 # --- Text Splitting Configuration ---
-CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 500))
-CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 75))
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", 1000)) # Adjusted default
+CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 150)) # Adjusted default
 
 # --- Retriever Configuration ---
-RETRIEVER_SEARCH_K = int(os.getenv("RETRIEVER_SEARCH_K", 3)) # Number of chunks to retrieve
+RETRIEVER_K = int(os.getenv("RETRIEVER_K", 4)) # Renamed from RETRIEVER_SEARCH_K
 
 # --- LLM Request Configuration ---
-LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", 0.1))
-LLM_MAX_OUTPUT_TOKENS = int(os.getenv("LLM_MAX_OUTPUT_TOKENS", 1024)) # Adjust based on model and expected answer length
+LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", 0.7)) # Adjusted default
+LLM_MAX_OUTPUT_TOKENS = int(os.getenv("LLM_MAX_OUTPUT_TOKENS", 1024))
 
 # --- Logging ---
-LOG_LEVEL = "INFO" # e.g., DEBUG, INFO, WARNING, ERROR
+# LOG_LEVEL = "INFO" # Can be set via environment if needed
 
 # --- Validation ---
 if not GROQ_API_KEY:
@@ -59,7 +52,9 @@ if not GROQ_API_KEY:
 # --- Simplified CHROMA_SETTINGS attribute for app.py check ---
 # Define a simple object or dictionary that app.py can check for is_persistent
 class SimpleChromaSettings:
-    def __init__(self, persistent):
-        self.is_persistent = persistent
+    # Simple placeholder class
+    def __init__(self, persistent_flag):
+        self.is_persistent = persistent_flag
 
-CHROMA_SETTINGS = SimpleChromaSettings(is_persistent)
+# *** Instantiate the SimpleChromaSettings using the calculated flag ***
+CHROMA_SETTINGS = SimpleChromaSettings(is_persistent) # Pass the calculated boolean here
