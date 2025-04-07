@@ -14,28 +14,27 @@ from langchain_core.output_parsers import StrOutputParser
 
 import config # Import configuration
 
-# --- ADD THIS FUNCTION BACK ---
-@logger.catch(reraise=True)
+# --- Initialize LLM ---
+@logger.catch(reraise=True) # Keep catch for unexpected errors during init
 def initialize_llm():
-    """Initializes and returns the Groq LLM client."""
+    """Initializes and returns the Groq LLM client. No internal logging."""
     if not config.GROQ_API_KEY:
-        logger.error("GROQ_API_KEY not found.")
+        # logger.error("GROQ_API_KEY not found.") # Remove internal logging
         raise ValueError("GROQ_API_KEY is not set in the environment variables.")
 
     try:
         llm = ChatGroq(
             temperature=config.LLM_TEMPERATURE,
-            groq_api_key=config.GROQ_API_KEY, # Make sure config has GROQ_API_KEY
+            groq_api_key=config.GROQ_API_KEY,
             model_name=config.LLM_MODEL_NAME,
-            max_tokens=config.LLM_MAX_OUTPUT_TOKENS # Make sure config has LLM_MAX_OUTPUT_TOKENS
+            max_tokens=config.LLM_MAX_OUTPUT_TOKENS
         )
-        logger.info(f"Groq LLM initialized with model: {config.LLM_MODEL_NAME}")
+        # logger.info(f"Groq LLM initialized with model: {config.LLM_MODEL_NAME}") # Remove internal logging
         return llm
     except Exception as e:
-        logger.error(f"Failed to initialize Groq LLM: {e}")
+        # logger.error(f"Failed to initialize Groq LLM: {e}") # Remove internal logging
+        # Re-raise a more specific error if needed, or let @logger.catch handle it
         raise ConnectionError(f"Could not initialize Groq LLM: {e}")
-# --- END OF FUNCTION TO ADD BACK ---
-
 
 # --- Option 1: Using LangChain's Groq Integration (Recommended) ---
 
