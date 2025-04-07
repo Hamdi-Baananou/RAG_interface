@@ -327,13 +327,13 @@ else:
                 # (Keep the think block removal logic just in case LLM still includes it)
                 think_start_tag = "<think>"
                 think_end_tag = "</think>"
-                start_index = raw_llm_output.find(think_start_tag) # Need raw_llm_output defined above loop or fetched again if needed
-                end_index = raw_llm_output.find(think_end_tag)
+                start_index = json_result_str.find(think_start_tag)
+                end_index = json_result_str.find(think_end_tag)
                 if start_index != -1 and end_index != -1 and end_index > start_index:
-                    thinking_process = raw_llm_output[start_index + len(think_start_tag):end_index].strip()
-                    json_string_to_parse = raw_llm_output[end_index + len(think_end_tag):].strip()
+                    thinking_process = json_result_str[start_index + len(think_start_tag):end_index].strip()
+                    json_string_to_parse = json_result_str[end_index + len(think_end_tag):].strip()
                 else:
-                    json_string_to_parse = raw_llm_output.strip()
+                    json_string_to_parse = json_result_str.strip()
 
 
                 try:
@@ -389,9 +389,9 @@ else:
                      if parse_error:
                           st.caption(f"JSON Parsing Error: {parse_error}")
                      # Show original raw output if different
-                     if raw_llm_output != json_string_to_parse: # Need raw_llm_output assigned before this point
+                     if json_result_str != json_string_to_parse:
                           st.markdown("**Original Raw LLM Output:**")
-                          st.code(raw_llm_output, language=None)
+                          st.code(json_result_str, language=None)
 
 
     st.success("Automated extraction complete.")
