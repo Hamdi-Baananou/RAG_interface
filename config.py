@@ -38,7 +38,7 @@ CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 75)) # Adjusted default
 RETRIEVER_K = int(os.getenv("RETRIEVER_K", 4)) # Renamed from RETRIEVER_SEARCH_K
 
 # --- LLM Request Configuration ---
-LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", 0.7)) # Adjusted default
+LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", 0.1)) # Adjusted default
 LLM_MAX_OUTPUT_TOKENS = int(os.getenv("LLM_MAX_OUTPUT_TOKENS", 6000))
 
 # --- Logging ---
