@@ -5,18 +5,9 @@ from typing import List, BinaryIO
 from loguru import logger # Using Loguru for nice logging
 
 from langchain_community.document_loaders import PyMuPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.docstore.document import Document
 
 import config # Import configuration
-
-# Initialize text splitter globally or within function if params change often
-text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=config.CHUNK_SIZE,
-    chunk_overlap=config.CHUNK_OVERLAP,
-    length_function=len, # Standard way to measure length
-    add_start_index=True, # Helpful for context tracking
-)
 
 def clean_text(text: str) -> str:
     """Applies basic cleaning to extracted text."""
