@@ -123,12 +123,98 @@ Determine Pull-To-Seat requirement using this reasoning chain:
 """
 
 GENDER_PROMPT = """
-Determine connector gender :
+Determine connector gender using this reasoning chain:
 
-    Male or Female or Unisex (both kind of terminal in the same cavity) or Hybrid (different cavities for both kind of terminals in the same connector)
+STEP 1: TERMINAL TYPE IDENTIFICATION (Internal Contacts)
 
-    Output format:
-    GENDER: [Male/Female/Unisex/Hybrid/NOT FOUND]
+    Scan the document for information about the electrical contacts within the housing:
+    ✓ Explicit gender terms for contacts: "male pin", "female socket", etc.
+    ✓ Physical descriptions of contacts:
+    * "Pin contacts", "Tab contacts", "Blade contacts" → Functionally Male Contacts
+    * "Socket contacts", "Receptacle contacts" → Functionally Female Contacts
+    ✓ Specific terminal part numbers mentioned (requires knowledge base about those terminals, if available).
+
+    Note the functional gender(s) of the internal contacts identified.
+
+STEP 2: CAVITY ARCHITECTURE ANALYSIS (Housing Structure)
+
+    Analyze the housing design based on descriptions or drawings:
+    ✓ Number of positions/cavities.
+    ✓ If multiple positions, are they intended for the same type of contact (uniform) or different types (mixed)?
+    ✓ Explicit mentions of cavity types: "pin cavities", "socket cavities".
+
+    For potential mixed-gender contacts (identified in Step 1):
+    ✓ Check cavity configuration:
+    * "Same cavity accepts both pin and socket" → Indicates potential Unisex architecture.
+    * "Separate, dedicated cavities for pins and sockets" → Indicates Hybrid architecture.
+
+STEP 3: MANUFACTURER NOMENCLATURE (Assembly Identification)
+
+    Interpret the primary name or terminology used by the manufacturer for the overall assembly:
+
+        "Plug", "Header" → Strong indicator of MALE assembly gender.
+
+        "Receptacle", "Socket", "Connector Housing" (if context implies mating to a plug/header) → Strong indicator of FEMALE assembly gender.
+
+        "Combo", "Hybrid Connector" → Likely Hybrid assembly gender.
+
+    Note any gender-specific suffixes in the main assembly part number (less common, e.g., "-M", "-F").
+
+STEP 4: CONFLICT RESOLUTION & GENDER DETERMINATION
+
+    Priority Rule: The Manufacturer Nomenclature (Step 3) for the overall assembly ("Plug" or "Receptacle") is the primary determinant of the final assembly gender classification (Male/Female). This overrides the functional gender of the internal contacts (Step 1) if they conflict.
+
+        Example: A housing named "Plug" (Male indicator) containing internal socket contacts (Female function) is classified as MALE overall.
+
+        Example: A housing named "Receptacle" (Female indicator) containing internal pin contacts (Male function) is classified as FEMALE overall.
+
+    Secondary Checks (apply if Step 3 is ambiguous or indicates Hybrid/Unisex):
+
+        Explicit Gender Declarations: If the document explicitly states "Male connector", "Female connector", "Hybrid", "Unisex", use that declaration, overriding Step 3 if necessary (rare).
+
+        Cavity Configuration Evidence (Step 2): Use this to confirm Hybrid (separate mixed cavities) or Unisex (shared mixed cavities) only if Step 3 indicated such potential or was unclear.
+
+        Internal Contact Types (Step 1): Mainly used to confirm uniformity (all pins or all sockets) or mixed nature for Hybrid/Unisex analysis.
+
+    Final Decision Logic:
+
+        If Step 3 clearly indicates "Plug" (Male) or "Receptacle" (Female) → Assign that gender.
+
+        If Step 3 indicates Hybrid/Combo → Assign Hybrid.
+
+        If Step 2 confirms Unisex architecture → Assign Unisex.
+
+        If unambiguous determination isn't possible following these rules → Assign NOT FOUND.
+
+    Reject unverified assumptions.
+
+STEP 5: FINAL VALIDATION
+
+    Confirm the SINGLE final classification based on the resolution in Step 4:
+    ✓ Male: Typically a "Plug" assembly.
+    ✓ Female: Typically a "Receptacle" assembly.
+    ✓ Hybrid: Contains separate cavities for both Male and Female functional contacts.
+    ✓ Unisex: Contains cavities designed to accept both Male and Female functional contacts.
+
+    Ensure the reasoning aligns with the priority rules.
+
+Examples:
+
+"Part Name: Receptacle Assembly. Drawing shows pin contacts in all positions."
+→ REASONING: [Step1] Pin contacts (Male function) → [Step3] "Receptacle" = Female assembly → [Step4] Priority Rule applied: Manufacturer Nomenclature 'Receptacle' determines Female assembly gender, overriding internal contact type → [Step5] Uniform Female assembly.
+→ GENDER: Female
+
+"Part Name: Plug Assembly. Document specifies applicable socket terminals."
+→ REASONING: [Step1] Socket terminals (Female function) → [Step3] "Plug" = Male assembly → [Step4] Priority Rule applied: Manufacturer Nomenclature 'Plug' determines Male assembly gender, overriding internal contact type → [Step5] Uniform Male assembly.
+→ GENDER: Male
+
+"Combo Connector: Cavities A1-A5 accept pins, B1-B5 accept sockets."
+→ REASONING: [Step1] Both Pin & Socket contacts → [Step2] Separate cavities → [Step3] "Combo" = Likely Hybrid → [Step4] Cavity evidence confirms Hybrid → [Step5] Hybrid assembly.
+→ GENDER: Hybrid
+
+Output format:
+REASONING: [Key determinations following the steps and priority rule]
+GENDER: [Male/Female/Unisex/Hybrid/NOT FOUND]
 """
 
 HEIGHT_MM_PROMPT = """
@@ -740,61 +826,9 @@ HOUSING SEAL: [Radial Seal / Interface Seal ]
 """
 
 WIRE_SEAL_PROMPT = """
-Determine the Wire Seal type using this reasoning chain:
+Determine the Wire Seal type :
 
-    STEP 1: TERM IDENTIFICATION
-    - Scan for explicit keywords:
-      ✓ **Single Wire Seal**:
-        * \"Per-wire seal\"
-        * Unique part numbers tied to wire sizes (e.g., \"SW-5A for 2.8mm wires\")
-      ✓ **Injected**:
-        * \"Injected sealant\"
-        * \"Potting compound\" (if cavity-specific)
-      ✓ **Mat Seal**:
-        * \"Gel seal\"/\"Silicone mat\"
-        * \"Family seal system\"
-      ✓ **None**:
-        * \"Unsealed cavities\"
-        * \"No wire sealing required\"
-
-    STEP 2: CONTEXT VALIDATION
-    - Confirm terms relate to **wire-to-cavity sealing**:
-      ✓ Reject general seals (e.g., housing radial seals)
-      ✓ Validate part numbers:
-        * \"SW-\" prefix → Single Wire Seal
-        * \"GEL-\" prefix → Mat Seal
-
-    STEP 3: CLASSIFICATION HIERARCHY
-    1. **Single Wire Seal** if part numbers map to wire sizes/positions
-    2. **Injected** for cavity-specific injected materials
-    3. **Mat Seal** for gel/silicone family terms
-    4. **None** if explicitly stated or implied by absence
-
-    STEP 4: CONFLICT RESOLUTION
-    - Multiple seal types? → Prioritize:
-      1. Explicit statements (\"Primary seal: Injected\")
-      2. Part number evidence
-      3. Document specificity (e.g., \"Mat Seal\" vs generic \"sealed\")
-
-    STEP 5: DEFAULT HANDLING
-    - No terms/part numbers after Steps 1-4? → **NOT FOUND**
-
-    Examples:
-    \"Cavity seals: SW-12 (1.5mm²) / SW-14 (2.5mm²)\"
-    → REASONING: [Step1] Part numbers + wire sizes → **Single Wire Seal**
-    → WIRE SEAL: Single Wire Seal
-
-    \"Injected epoxy seals for all cavities\"
-    → REASONING: [Step1] \"Injected\" + cavity context → **Injected**
-    → WIRE SEAL: Injected
-
-    \"Gel-based family sealing system\"
-    → REASONING: [Step1] \"Gel\" + \"family\" → **Mat Seal**
-    → WIRE SEAL: Mat Seal
-
-    \"Terminal cavities require no additional sealing\"
-    → REASONING: [Step1] Explicit negation → **None**
-    → WIRE SEAL: None
+   Wire seal describes the sealing of the space between wire and cavity wall, when a terminal is fitted in a cavity. There are different possibilities for sealing available: Single wire seal, Injected, Mat seal (includes “gel family seal” and “silicone family seal”), None.
 
     Output format:
     WIRE SEAL: [Single Wire Seal/Injected/Mat Seal/None]
@@ -1221,53 +1255,11 @@ Determine the **Type of Connector** using this reasoning chain:
 SET_KIT_PROMPT = """
 Determine the **Set/Kit** status using this reasoning chain:
 
-    STEP 1: LEONI PART NUMBER ANALYSIS
-    - Extract all LEONI part numbers (e.g., \"L-1234\", \"LEO-5A6B\")
-    - If **only one part number** exists:
-      ✓ Check if it includes accessories (cover, lever, TPA)
-      ✓ Verify accessories lack individual part numbers
-    - If **multiple part numbers**:
-      ✗ Confirm if they belong to separate components
-
-    STEP 2: ACCESSORY IDENTIFICATION
-    - List all included components:
-      ✓ \"Cover\", \"lever\", \"TPA\", etc.
-    - Validate if accessories are:
-      ✓ Documented under the **same part number** → **Yes**
-      ✓ Assigned **separate part numbers** → **No**
-
-    STEP 3: PREASSEMBLY CHECK
-    - Confirm accessories are **NOT preassembled**:
-      ✓ Terms like \"loose pieces\", \"requires assembly\"
-      ✗ \"Preinstalled cover\" or \"built-in lever\"
-
-    STEP 4: EXPLICIT STATEMENT PRIORITIZATION
-    - Override inferences if:
-      ✓ \"Set/Kit\" explicitly stated → **Yes**
-      ✓ \"Separate part numbers required\" → **No**
-
-    STEP 5: DEFAULT RESOLUTION
-    - Ambiguous part numbers or missing info → **NOT FOUND**
-
-    Examples:
-    \"Connector Set (P/N L-789) includes cover, lever (no assembly required)\"
-    → REASONING: [Step1] Single P/N + accessories → **Yes**
-    → SET/KIT: Yes
-
-    \"Main housing (L-456), Cover (L-457), TPA (L-458)\"
-    → REASONING: [Step1] Multiple P/Ns → **No**
-    → SET/KIT: No
-
-    \"Kit with unassembled components (P/N L-999)\"
-    → REASONING: [Step4] Explicit \"Kit\" → **Yes**
-    → SET/KIT: Yes
-
-    \"Connector with accessories (no P/N specified)\"
-    → REASONING: [Step5] Ambiguous → **NOT FOUND**
-    → SET/KIT: NOT FOUND
+If a connector is delivered as a ‘Set/Kit’ with one LEONI part number, means connector with separate accessories (cover, lever, TPA,…) which aren´t preassembled, then it is Yes. All loose pieces are handled with the same Leoni part number.
+If all loose pieces have their own LEONI part number, then it is No.
 
     Output format:
-    SET/KIT: [Yes/No/NOT FOUND]
+    SET/KIT: [Yes/No]
 """
 
 # --- Specialized Attributes ---
