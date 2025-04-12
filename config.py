@@ -40,7 +40,7 @@ RETRIEVER_K = int(os.getenv("RETRIEVER_K", 4)) # Renamed from RETRIEVER_SEARCH_K
 
 # --- LLM Request Configuration ---
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", 0.1)) # Adjusted default
-LLM_MAX_OUTPUT_TOKENS = int(os.getenv("LLM_MAX_OUTPUT_TOKENS", 6000))
+LLM_MAX_OUTPUT_TOKENS = int(os.getenv("LLM_MAX_OUTPUT_TOKENS", 31550))
 
 # --- Logging ---
 # LOG_LEVEL = "INFO" # Can be set via environment if needed
