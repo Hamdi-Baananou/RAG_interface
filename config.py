@@ -31,7 +31,7 @@ COLLECTION_NAME = os.getenv("COLLECTION_NAME", "pdf_qa_prod_collection") # Use t
 is_persistent = bool(CHROMA_PERSIST_DIRECTORY) # True if directory is set, False otherwise
 
 # --- Text Splitting Configuration ---
-CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", (500))) # Adjusted default
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", (5000))) # Adjusted default
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 75)) # Adjusted default
 
 # --- Retriever Configuration ---
