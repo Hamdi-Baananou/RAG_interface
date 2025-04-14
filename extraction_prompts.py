@@ -826,9 +826,61 @@ HOUSING SEAL: [Radial Seal / Interface Seal ]
 """
 
 WIRE_SEAL_PROMPT = """
-Determine the Wire Seal type :
+Determine the Wire Seal type using this reasoning chain:
 
-   Wire seal describes the sealing of the space between wire and cavity wall, when a terminal is fitted in a cavity. There are different possibilities for sealing available: Single wire seal, Injected, Mat seal (includes “gel family seal” and “silicone family seal”), None.
+    STEP 1: TERM IDENTIFICATION
+    - Scan for explicit keywords:
+      ✓ **Single Wire Seal**:
+        * \"Per-wire seal\"
+        * Unique part numbers tied to wire sizes (e.g., \"SW-5A for 2.8mm wires\")
+      ✓ **Injected**:
+        * \"Injected sealant\"
+        * \"Potting compound\" (if cavity-specific)
+      ✓ **Mat Seal**:
+        * \"Gel seal\"/\"Silicone mat\"
+        * \"Family seal system\"
+      ✓ **None**:
+        * \"Unsealed cavities\"
+        * \"No wire sealing required\"
+
+    STEP 2: CONTEXT VALIDATION
+    - Confirm terms relate to **wire-to-cavity sealing**:
+      ✓ Reject general seals (e.g., housing radial seals)
+      ✓ Validate part numbers:
+        * \"SW-\" prefix → Single Wire Seal
+        * \"GEL-\" prefix → Mat Seal
+
+    STEP 3: CLASSIFICATION HIERARCHY
+    1. **Single Wire Seal** if part numbers map to wire sizes/positions
+    2. **Injected** for cavity-specific injected materials
+    3. **Mat Seal** for gel/silicone family terms
+    4. **None** if explicitly stated or implied by absence
+
+    STEP 4: CONFLICT RESOLUTION
+    - Multiple seal types? → Prioritize:
+      1. Explicit statements (\"Primary seal: Injected\")
+      2. Part number evidence
+      3. Document specificity (e.g., \"Mat Seal\" vs generic \"sealed\")
+
+    STEP 5: DEFAULT HANDLING
+    - No terms/part numbers after Steps 1-4? → **NOT FOUND**
+
+    Examples:
+    \"Cavity seals: SW-12 (1.5mm²) / SW-14 (2.5mm²)\"
+    → REASONING: [Step1] Part numbers + wire sizes → **Single Wire Seal**
+    → WIRE SEAL: Single Wire Seal
+
+    \"Injected epoxy seals for all cavities\"
+    → REASONING: [Step1] \"Injected\" + cavity context → **Injected**
+    → WIRE SEAL: Injected
+
+    \"Gel-based family sealing system\"
+    → REASONING: [Step1] \"Gel\" + \"family\" → **Mat Seal**
+    → WIRE SEAL: Mat Seal
+
+    \"Terminal cavities require no additional sealing\"
+    → REASONING: [Step1] Explicit negation → **None**
+    → WIRE SEAL: None
 
     Output format:
     WIRE SEAL: [Single Wire Seal/Injected/Mat Seal/None]
@@ -1093,7 +1145,7 @@ Determine Connector Position Assurance (CPA) status using this reasoning chain:
     → CONNECTOR POSITION ASSURANCE: NOT FOUND
 
     Output format:
-    CONNECTOR POSITION ASSURANCE: [Yes/No/NOT FOUND]
+    CONNECTOR POSITION ASSURANCE: [Yes/No]
 """
 
 CLOSED_CAVITIES_PROMPT = """
@@ -1140,7 +1192,7 @@ Determine closed cavities using this reasoning chain:
     → NAME OF CLOSED CAVITIES: NOT FOUND
 
     Output format:
-    NAME OF CLOSED CAVITIES: [numbers/none/NOT FOUND]
+    NAME OF CLOSED CAVITIES: [numbers/none]
 """
 
 # --- Assembly & Type ---
@@ -1255,11 +1307,53 @@ Determine the **Type of Connector** using this reasoning chain:
 SET_KIT_PROMPT = """
 Determine the **Set/Kit** status using this reasoning chain:
 
-If a connector is delivered as a ‘Set/Kit’ with one LEONI part number, means connector with separate accessories (cover, lever, TPA,…) which aren´t preassembled, then it is Yes. All loose pieces are handled with the same Leoni part number.
-If all loose pieces have their own LEONI part number, then it is No.
+    STEP 1: LEONI PART NUMBER ANALYSIS
+    - Extract all LEONI part numbers (e.g., \"L-1234\", \"LEO-5A6B\")
+    - If **only one part number** exists:
+      ✓ Check if it includes accessories (cover, lever, TPA)
+      ✓ Verify accessories lack individual part numbers
+    - If **multiple part numbers**:
+      ✗ Confirm if they belong to separate components
+
+    STEP 2: ACCESSORY IDENTIFICATION
+    - List all included components:
+      ✓ \"Cover\", \"lever\", \"TPA\", etc.
+    - Validate if accessories are:
+      ✓ Documented under the **same part number** → **Yes**
+      ✓ Assigned **separate part numbers** → **No**
+
+    STEP 3: PREASSEMBLY CHECK
+    - Confirm accessories are **NOT preassembled**:
+      ✓ Terms like \"loose pieces\", \"requires assembly\"
+      ✗ \"Preinstalled cover\" or \"built-in lever\"
+
+    STEP 4: EXPLICIT STATEMENT PRIORITIZATION
+    - Override inferences if:
+      ✓ \"Set/Kit\" explicitly stated → **Yes**
+      ✓ \"Separate part numbers required\" → **No**
+
+    STEP 5: DEFAULT RESOLUTION
+    - Ambiguous part numbers or missing info → **NOT FOUND**
+
+    Examples:
+    \"Connector Set (P/N L-789) includes cover, lever (no assembly required)\"
+    → REASONING: [Step1] Single P/N + accessories → **Yes**
+    → SET/KIT: Yes
+
+    \"Main housing (L-456), Cover (L-457), TPA (L-458)\"
+    → REASONING: [Step1] Multiple P/Ns → **No**
+    → SET/KIT: No
+
+    \"Kit with unassembled components (P/N L-999)\"
+    → REASONING: [Step4] Explicit \"Kit\" → **Yes**
+    → SET/KIT: Yes
+
+    \"Connector with accessories (no P/N specified)\"
+    → REASONING: [Step5] Ambiguous → **NOT FOUND**
+    → SET/KIT: NOT FOUND
 
     Output format:
-    SET/KIT: [Yes/No]
+    SET/KIT: [Yes/No/NOT FOUND]
 """
 
 # --- Specialized Attributes ---

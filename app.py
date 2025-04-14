@@ -373,6 +373,7 @@ else:
 
                     # --- Enhanced JSON Extraction using Regex ---
                     json_string_to_parse = None
+                    parsed_json = None # Initialize parsed_json
                     try:
                         # Search for the first '{...}' block, handling nested braces
                         match = re.search(r'\{.*\}', string_to_search, re.DOTALL)
@@ -388,46 +389,58 @@ else:
                             json_string_to_parse = string_to_search # Store the successfully parsed part
                             logger.debug(f"Successfully parsed JSON directly (no regex needed) for '{prompt_name}'.")
 
-                        # --- ADD LOGGING FOR KEY DEBUGGING ---
-                        logger.debug(f"Checking for key: '{attribute_key}' in parsed keys: {list(parsed_json.keys())}")
-                        # -------------------------------------
+                        # --- Value Extraction Logic (Revised) ---
+                        if isinstance(parsed_json, dict):
+                            actual_keys = list(parsed_json.keys())
+                            if len(actual_keys) == 1:
+                                # Successfully parsed a single key-value pair JSON
+                                actual_key = actual_keys[0]
+                                final_answer_value = str(list(parsed_json.values())[0]) # Get the value
 
-                        # --- Key Check (after successful parsing) ---
-                        if isinstance(parsed_json, dict) and attribute_key in parsed_json:
-                             final_answer_value = str(parsed_json[attribute_key]) # Ensure string
-                        elif isinstance(parsed_json, dict) and "error" in parsed_json:
-                             # Check for specific rate limit error message
-                             if "rate limit" in parsed_json['error'].lower():
-                                 final_answer_value = "Rate Limit Hit"
-                                 is_rate_limit = True
-                             else:
-                                 final_answer_value = f"Error: {parsed_json['error']}"
+                                # Log a warning if the key is not what was expected, but treat as success
+                                if actual_key != attribute_key:
+                                    logger.warning(f"Key mismatch for '{prompt_name}'. Expected '{attribute_key}', but found '{actual_key}'. Using the value anyway.")
+                                else:
+                                     logger.debug(f"Correct key '{attribute_key}' found and value extracted for '{prompt_name}'.")
+                                parse_error = None # Ensure parse_error is None for this successful path
+
+                            elif "error" in parsed_json:
+                                 # Handle specific error responses from the LLM if they are formatted as JSON
+                                 if "rate limit" in parsed_json['error'].lower():
+                                     final_answer_value = "Rate Limit Hit"
+                                     is_rate_limit = True
+                                     parse_error = ValueError("Rate limit hit (reported in JSON).")
+                                 else:
+                                     error_msg = parsed_json['error']
+                                     final_answer_value = f"Error: {error_msg}"
+                                     parse_error = ValueError(f"LLM returned an error in JSON: {error_msg}")
+                                     logger.warning(f"LLM returned error for '{prompt_name}': {error_msg}")
+
+                            else:
+                                # Dictionary found, but not a single key-value pair or known error format
+                                final_answer_value = "Unexpected JSON Format"
+                                parse_error = ValueError(f"Expected single key-value JSON or error key, but got {len(actual_keys)} keys: {actual_keys}")
+                                logger.warning(f"Unexpected JSON format for '{prompt_name}'. Keys: {actual_keys}. Parsed JSON: {parsed_json}")
                         else:
-                             # This path is taken if the key is not found OR if parsed_json is not a dict
-                             final_answer_value = "Key not found"
-                             logger.warning(f"Key '{attribute_key}' not found in parsed JSON for '{prompt_name}'. Parsed JSON: {parsed_json}")
-                             # Set parse_error to indicate the key issue, distinct from JSON format error
-                             parse_error = KeyError(f"Attribute key '{attribute_key}' not found in the parsed JSON object.")
+                            # Parsed result was not a dictionary
+                            final_answer_value = "Unexpected JSON Format"
+                            parse_error = TypeError(f"Expected JSON object (dict), but got {type(parsed_json)}")
+                            logger.warning(f"Expected dict, but got {type(parsed_json)} for '{prompt_name}'. Parsed JSON: {parsed_json}")
 
                     except json.JSONDecodeError as json_err:
                         parse_error = json_err
                         final_answer_value = "Invalid JSON"
                         logger.error(f"Failed to parse JSON for '{prompt_name}'. Error: {json_err}. String attempted: '{string_to_search}'")
-                        # If regex found something, log that too
-                        if 'potential_json' in locals() and potential_json != string_to_search:
-                            logger.error(f"Regex extracted this substring for parsing attempt: '{potential_json}'")
-                    except KeyError as key_err:
-                        # This catches the explicitly set parse_error for key not found
-                        parse_error = key_err
-                        final_answer_value = "Key not found"
-                        # Log is already done where error is set
+                        if 'potential_json' in locals() and locals().get('potential_json') != string_to_search:
+                             logger.error(f"Regex extracted this substring for parsing attempt: '{locals().get('potential_json')}'")
+                    # Remove specific KeyError catch as it's handled above
                     except Exception as parse_exc:
-                        parse_error = parse_exc
+                        parse_error = parse_exc # Catch any other unexpected errors during parsing/checking
                         final_answer_value = "Parsing Error"
                         logger.error(f"Unexpected error processing result for '{prompt_name}'. Error: {parse_exc}. String attempted: '{string_to_search}'")
 
-                    # Determine status flags
-                    is_error = bool(parse_error) or "error" in final_answer_value.lower() or "invalid json" in final_answer_value.lower() or "parsing error" in final_answer_value.lower() or "key not found" in final_answer_value.lower()
+                    # Determine status flags (Parse error now set for more cases)
+                    is_error = bool(parse_error) or "error" in final_answer_value.lower() or "invalid json" in final_answer_value.lower() or "parsing error" in final_answer_value.lower() or "unexpected json format" in final_answer_value.lower()
                     is_not_found = "not found" in final_answer_value.lower() # Explicit "NOT FOUND" from prompt
                     is_success = not is_error and not is_not_found and not is_rate_limit
 
@@ -451,7 +464,7 @@ else:
                         'Raw Output': json_result_str,
                         'Parse Error': str(parse_error) if parse_error else None,
                         'Is Success': is_success,
-                        'Is Error': is_error and not is_rate_limit and not is_not_found, # More specific error
+                        'Is Error': is_error and not is_rate_limit and not is_not_found, # More specific error definition might be needed
                         'Is Not Found': is_not_found,
                         'Is Rate Limit': is_rate_limit,
                         'Latency (s)': round(run_time, 2),
@@ -475,7 +488,7 @@ else:
                          display_string = json_string_to_parse if json_string_to_parse is not None else string_to_search
                          st.code(display_string, language="json")
                          if parse_error:
-                              st.caption(f"Parsing Error: {parse_error}")
+                              st.caption(f"Parsing/Validation Error: {parse_error}") # Renamed caption slightly
                          # Always show the original raw output if it differs significantly
                          if raw_llm_output.strip() != display_string.strip():
                               st.markdown("**Original Raw LLM Output:**")
