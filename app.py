@@ -12,6 +12,7 @@ import time
 from loguru import logger
 import json # Import the json library
 import pandas as pd # Add pandas import
+import re # Import the 're' module for regular expressions
 
 # Import project modules
 import config
@@ -351,26 +352,44 @@ else:
                 with st.container(border=True):
                     st.markdown(f"##### {prompt_name}")
                     thinking_process = "Not available."
-                    json_string_to_parse = json_result_str
+                    raw_llm_output = json_result_str # Keep original output for debugging
+                    string_to_search = raw_llm_output
                     parse_error = None # Reset parse_error for this item
 
-                    # --- Remove <think> tags if present ---
+                    # --- Basic Cleaning: Remove <think> tags and ```json ... ``` ---
                     think_start_tag = "<think>"
                     think_end_tag = "</think>"
-                    start_index = json_result_str.find(think_start_tag)
-                    end_index = json_result_str.find(think_end_tag)
+                    start_index = string_to_search.find(think_start_tag)
+                    end_index = string_to_search.find(think_end_tag)
                     if start_index != -1 and end_index != -1 and end_index > start_index:
-                        thinking_process = json_result_str[start_index + len(think_start_tag):end_index].strip()
-                        json_string_to_parse = json_result_str[end_index + len(think_end_tag):].strip()
-                    else:
-                        json_string_to_parse = json_result_str.strip()
+                        thinking_process = string_to_search[start_index + len(think_start_tag):end_index].strip()
+                        string_to_search = string_to_search[end_index + len(think_end_tag):].strip()
 
-                    # --- Parse the JSON result ---
+                    if string_to_search.startswith("```json"):
+                        string_to_search = string_to_search[7:]
+                        if string_to_search.endswith("```"):
+                            string_to_search = string_to_search[:-3]
+                    string_to_search = string_to_search.strip() # General strip
+
+                    # --- Enhanced JSON Extraction using Regex ---
+                    json_string_to_parse = None
                     try:
-                        if not json_string_to_parse:
-                             raise json.JSONDecodeError("No JSON content found.", "", 0)
+                        # Search for the first '{...}' block, handling nested braces
+                        match = re.search(r'\{.*\}', string_to_search, re.DOTALL)
+                        if match:
+                            potential_json = match.group(0)
+                            # Attempt to parse the extracted block
+                            parsed_json = json.loads(potential_json)
+                            json_string_to_parse = potential_json # Store the successfully parsed part
+                            logger.debug(f"Successfully parsed JSON extracted via regex for '{prompt_name}'.")
+                        else:
+                            # If regex fails, maybe the original string was already JSON? Try parsing it directly.
+                            # This handles cases where the LLM output *is* just the JSON correctly.
+                            parsed_json = json.loads(string_to_search)
+                            json_string_to_parse = string_to_search # Store the successfully parsed part
+                            logger.debug(f"Successfully parsed JSON directly (no regex needed) for '{prompt_name}'.")
 
-                        parsed_json = json.loads(json_string_to_parse)
+                        # --- Key Check (after successful parsing) ---
                         if isinstance(parsed_json, dict) and attribute_key in parsed_json:
                              final_answer_value = str(parsed_json[attribute_key]) # Ensure string
                         elif isinstance(parsed_json, dict) and "error" in parsed_json:
@@ -382,16 +401,26 @@ else:
                                  final_answer_value = f"Error: {parsed_json['error']}"
                         else:
                              final_answer_value = "Key not found"
-                             logger.warning(f"Key '{attribute_key}' not found in parsed JSON: {parsed_json}")
+                             logger.warning(f"Key '{attribute_key}' not found in parsed JSON for '{prompt_name}'. Parsed JSON: {parsed_json}")
+                             # Set parse_error to indicate the key issue, distinct from JSON format error
+                             parse_error = KeyError(f"Attribute key '{attribute_key}' not found in the parsed JSON object.")
 
                     except json.JSONDecodeError as json_err:
                         parse_error = json_err
                         final_answer_value = "Invalid JSON"
-                        logger.error(f"Failed to parse JSON for '{prompt_name}'. Error: {json_err}. String attempted: '{json_string_to_parse}'")
+                        logger.error(f"Failed to parse JSON for '{prompt_name}'. Error: {json_err}. String attempted: '{string_to_search}'")
+                        # If regex found something, log that too
+                        if 'potential_json' in locals() and potential_json != string_to_search:
+                            logger.error(f"Regex extracted this substring for parsing attempt: '{potential_json}'")
+                    except KeyError as key_err:
+                        # This catches the explicitly set parse_error for key not found
+                        parse_error = key_err
+                        final_answer_value = "Key not found"
+                        # Log is already done where error is set
                     except Exception as parse_exc:
                         parse_error = parse_exc
                         final_answer_value = "Parsing Error"
-                        logger.error(f"Unexpected error parsing result for '{prompt_name}'. Error: {parse_exc}. String attempted: '{json_string_to_parse}'")
+                        logger.error(f"Unexpected error processing result for '{prompt_name}'. Error: {parse_exc}. String attempted: '{string_to_search}'")
 
                     # Determine status flags
                     is_error = bool(parse_error) or "error" in final_answer_value.lower() or "invalid json" in final_answer_value.lower() or "parsing error" in final_answer_value.lower() or "key not found" in final_answer_value.lower()
@@ -437,13 +466,16 @@ else:
                          if thinking_process != "Not available.":
                               st.markdown("**Thinking Process:**")
                               st.code(thinking_process, language=None)
-                         st.markdown("**Raw JSON Output (Attempted Parse):**")
-                         st.code(json_string_to_parse, language="json")
+                         # Show the string that was *actually* attempted to be parsed by json.loads
+                         st.markdown("**Cleaned String / Regex Match (Attempted Parse):**")
+                         display_string = json_string_to_parse if json_string_to_parse is not None else string_to_search
+                         st.code(display_string, language="json")
                          if parse_error:
-                              st.caption(f"JSON Parsing Error: {parse_error}")
-                         if json_result_str != json_string_to_parse:
+                              st.caption(f"Parsing Error: {parse_error}")
+                         # Always show the original raw output if it differs significantly
+                         if raw_llm_output.strip() != display_string.strip():
                               st.markdown("**Original Raw LLM Output:**")
-                              st.code(json_result_str, language=None)
+                              st.code(raw_llm_output, language=None)
 
         # --- End of Extraction Loop ---
         if extraction_successful: # Only update state if the loop completed reasonably
