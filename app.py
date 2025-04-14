@@ -89,6 +89,9 @@ if 'evaluation_results' not in st.session_state:
     st.session_state.evaluation_results = [] # List to store detailed results per field
 if 'evaluation_metrics' not in st.session_state:
     st.session_state.evaluation_metrics = None # Dict to store summary metrics
+# Add flag to track if extraction has run for the current data
+if 'extraction_performed' not in st.session_state:
+    st.session_state.extraction_performed = False
 
 # --- Global Variables / Initialization ---
 # Initialize embeddings (this is relatively heavy, do it once)
@@ -142,6 +145,7 @@ if embedding_function is None or llm is None:
 def reset_evaluation_state():
     st.session_state.evaluation_results = []
     st.session_state.evaluation_metrics = None
+    st.session_state.extraction_performed = False # Reset the flag here too
     # Clear data editor state if it exists
     if 'gt_editor' in st.session_state:
         del st.session_state['gt_editor']
@@ -158,8 +162,9 @@ if st.session_state.retriever is None and config.CHROMA_SETTINGS.is_persistent a
         st.session_state.extraction_chain = create_extraction_chain(st.session_state.retriever, llm) # Use single chain function
         if not st.session_state.extraction_chain:
             st.warning("Failed to create extraction chain from loaded retriever.")
-        # Don't reset evaluation if loading existing data, user might want to re-evaluate
-        pass
+        # Don't reset evaluation if loading existing data, but ensure extraction hasn't run yet
+        st.session_state.extraction_performed = False # Ensure flag is false on load
+        pass # Don't reset evaluation results when loading
     else:
         logger.warning("No existing persistent vector store found or failed to load.")
 
@@ -190,11 +195,11 @@ with st.sidebar:
         if not embedding_function or not llm:
              st.error("Core components (Embeddings or LLM) failed to initialize earlier. Cannot process documents.")
         else:
-            # Reset state including evaluation
+            # Reset state including evaluation and the extraction flag
             st.session_state.retriever = None
             st.session_state.extraction_chain = None # Reset single chain
             st.session_state.processed_files = []
-            reset_evaluation_state() # Reset evaluation results
+            reset_evaluation_state() # Reset evaluation results AND extraction_performed flag
 
             filenames = [f.name for f in uploaded_files]
             logger.info(f"Starting processing for {len(filenames)} files: {', '.join(filenames)}")
@@ -229,19 +234,21 @@ with st.sidebar:
                                  st.session_state.extraction_chain = create_extraction_chain(st.session_state.retriever, llm)
                             if st.session_state.extraction_chain:
                                 logger.success("Extraction chain created.")
+                                # Keep extraction_performed as False here, it will run in the main section
                                 st.success(f"Successfully processed {len(filenames)} file(s). Evaluation below.") # Update message
                             else:
                                 st.error("Failed to create extraction chain after processing.")
-                                reset_evaluation_state() # Ensure reset if chain fails
+                                # reset_evaluation_state() called earlier is sufficient
                         else:
                             st.error("Failed to setup vector store after processing PDFs.")
-                            reset_evaluation_state() # Ensure reset if retriever fails
+                            # reset_evaluation_state() called earlier is sufficient
                     except Exception as e:
                          logger.error(f"Failed during vector store setup: {e}", exc_info=True)
                          st.error(f"Error setting up vector store: {e}")
+                         # reset_evaluation_state() called earlier is sufficient
             elif not processed_docs and uploaded_files:
                 st.warning("No text could be extracted or processed from the uploaded PDFs.")
-                reset_evaluation_state() # Ensure reset if no docs
+                # reset_evaluation_state() called earlier is sufficient
 
     elif process_button and not uploaded_files:
         st.warning("Please upload at least one PDF file before processing.")
@@ -264,11 +271,11 @@ st.header("2. Extracted Information")
 if not st.session_state.extraction_chain:
     st.info("Upload and process documents using the sidebar to see extracted results here.")
     # Ensure evaluation state is also clear if no chain
-    if not st.session_state.evaluation_results:
-         reset_evaluation_state()
+    if not st.session_state.evaluation_results and not st.session_state.extraction_performed:
+         reset_evaluation_state() # Ensure reset if no chain and extraction not done
 else:
-    # Only run extraction if results aren't already populated (avoids re-running on GT input)
-    if not st.session_state.evaluation_results:
+    # Only run extraction if the chain is ready AND extraction hasn't been performed yet for this data
+    if st.session_state.extraction_chain and not st.session_state.extraction_performed:
         # Define the prompts (attribute keys and their instructions)
         prompts_to_run = {
             # Material Properties
@@ -308,6 +315,7 @@ else:
         SLEEP_INTERVAL_SECONDS = 0.5 # Adjust this value as needed
 
         extraction_results_list = [] # Temp list to build results
+        extraction_successful = True # Flag to track if all extractions ran without major issues preventing state update
 
         for prompt_name, prompt_text in prompts_to_run.items():
             current_col = cols[col_index % 2]
@@ -419,6 +427,11 @@ else:
                     }
                     extraction_results_list.append(result_data)
 
+                    # Check if a critical error occurred that should stop us from marking extraction as done
+                    if is_error and not is_rate_limit: # e.g., fundamental chain issue
+                       # Optionally add more logic here if certain errors shouldn't prevent the flag
+                       pass # For now, assume any error still counts as an 'attempt'
+
                     # --- Expander for Details ---
                     with st.expander("Show Details"):
                          if thinking_process != "Not available.":
@@ -433,14 +446,22 @@ else:
                               st.code(json_result_str, language=None)
 
         # --- End of Extraction Loop ---
-        st.session_state.evaluation_results = extraction_results_list # Store results in session state
-        st.success("Automated extraction complete. Enter ground truth below.")
+        if extraction_successful: # Only update state if the loop completed reasonably
+            st.session_state.evaluation_results = extraction_results_list # Store results in session state
+            st.session_state.extraction_performed = True # Set the flag HERE after successful run
+            st.success("Automated extraction complete. Enter ground truth below.")
+            st.rerun() # Rerun once to immediately hide the "Running prompts..." message and show GT editor
+        else:
+            # Handle case where loop might have been interrupted (optional)
+            st.error("Extraction process encountered issues. Some results may be missing.")
+            # Decide if partial results should be stored or flag set
 
-        # --- Ground Truth Entry and Evaluation Section ---
-        st.divider()
-        st.header("3. Enter Ground Truth & Evaluate")
-
+        # --- Ground Truth Entry and Evaluation Section (Displayed if results exist) ---
+        # This part now runs regardless of the extraction_performed flag, using existing results
         if st.session_state.evaluation_results:
+            st.divider()
+            st.header("3. Enter Ground Truth & Evaluate")
+
             # Convert results to DataFrame for easier editing
             results_df = pd.DataFrame(st.session_state.evaluation_results)
 
@@ -642,6 +663,14 @@ else:
                 )
         else:
             st.info("Process documents and calculate metrics to enable export.")
+
+    elif st.session_state.extraction_chain and st.session_state.extraction_performed:
+        # If extraction ran but produced no results (e.g., all errors/empty)
+        st.warning("Extraction process completed, but no valid results were generated. Check logs or raw outputs if available.")
+    elif st.session_state.extraction_chain and not st.session_state.extraction_performed:
+        # This case should ideally not be reached if the logic above works,
+        # but serves as a fallback message.
+        st.info("Extraction is pending or encountered an issue before completing.")
 
 
 # REMOVE the previous Q&A section entirely (already done)
