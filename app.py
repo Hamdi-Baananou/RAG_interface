@@ -384,10 +384,13 @@ else:
                             logger.debug(f"Successfully parsed JSON extracted via regex for '{prompt_name}'.")
                         else:
                             # If regex fails, maybe the original string was already JSON? Try parsing it directly.
-                            # This handles cases where the LLM output *is* just the JSON correctly.
                             parsed_json = json.loads(string_to_search)
                             json_string_to_parse = string_to_search # Store the successfully parsed part
                             logger.debug(f"Successfully parsed JSON directly (no regex needed) for '{prompt_name}'.")
+
+                        # --- ADD LOGGING FOR KEY DEBUGGING ---
+                        logger.debug(f"Checking for key: '{attribute_key}' in parsed keys: {list(parsed_json.keys())}")
+                        # -------------------------------------
 
                         # --- Key Check (after successful parsing) ---
                         if isinstance(parsed_json, dict) and attribute_key in parsed_json:
@@ -400,6 +403,7 @@ else:
                              else:
                                  final_answer_value = f"Error: {parsed_json['error']}"
                         else:
+                             # This path is taken if the key is not found OR if parsed_json is not a dict
                              final_answer_value = "Key not found"
                              logger.warning(f"Key '{attribute_key}' not found in parsed JSON for '{prompt_name}'. Parsed JSON: {parsed_json}")
                              # Set parse_error to indicate the key issue, distinct from JSON format error
