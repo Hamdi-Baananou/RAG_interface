@@ -274,7 +274,7 @@ if not st.session_state.extraction_chain:
     if not st.session_state.evaluation_results and not st.session_state.extraction_performed:
          reset_evaluation_state() # Ensure reset if no chain and extraction not done
 else:
-    # Only run extraction if the chain is ready AND extraction hasn't been performed yet for this data
+    # --- Block 1: Run Extraction (if needed) ---
     if st.session_state.extraction_chain and not st.session_state.extraction_performed:
         # Define the prompts (attribute keys and their instructions)
         prompts_to_run = {
@@ -450,133 +450,138 @@ else:
             st.session_state.evaluation_results = extraction_results_list # Store results in session state
             st.session_state.extraction_performed = True # Set the flag HERE after successful run
             st.success("Automated extraction complete. Enter ground truth below.")
-            st.rerun() # Rerun once to immediately hide the "Running prompts..." message and show GT editor
+            # st.rerun() # REMOVE or COMMENT OUT this line
         else:
             # Handle case where loop might have been interrupted (optional)
             st.error("Extraction process encountered issues. Some results may be missing.")
             # Decide if partial results should be stored or flag set
-
-        # --- Ground Truth Entry and Evaluation Section (Displayed if results exist) ---
-        # This part now runs regardless of the extraction_performed flag, using existing results
-        if st.session_state.evaluation_results:
-            st.divider()
-            st.header("3. Enter Ground Truth & Evaluate")
-
-            # Convert results to DataFrame for easier editing
-            results_df = pd.DataFrame(st.session_state.evaluation_results)
-
-            st.info("Enter the correct 'Ground Truth' value for each field below. Leave blank if the field shouldn't exist or 'NOT FOUND' is correct.")
-
-            # Define which columns are editable
-            # Make only 'Ground Truth' editable
-            disabled_cols = [col for col in results_df.columns if col != 'Ground Truth']
-
-            # Use data editor for ground truth input
-            edited_df = st.data_editor(
-                results_df,
-                key="gt_editor", # Assign a key to access the edited state
-                use_container_width=True,
-                num_rows="dynamic", # Allow variable number of rows
-                disabled=disabled_cols, # Disable editing for all but Ground Truth
-                column_config={ # Optional: Improve display
-                     "Prompt Name": st.column_config.TextColumn(width="medium"),
-                     "Extracted Value": st.column_config.TextColumn(width="medium"),
-                     "Ground Truth": st.column_config.TextColumn(width="medium", help="Enter the correct value here"),
-                     "Is Success": st.column_config.CheckboxColumn(width="small"),
-                     "Is Error": st.column_config.CheckboxColumn(width="small"),
-                     "Is Not Found": st.column_config.CheckboxColumn(width="small"),
-                     "Is Rate Limit": st.column_config.CheckboxColumn(width="small"),
-                     "Latency (s)": st.column_config.NumberColumn(format="%.2f", width="small"),
-                     "Exact Match": st.column_config.CheckboxColumn(width="small"),
-                     "Case-Insensitive Match": st.column_config.CheckboxColumn(width="small"),
-                     "Raw Output": None, # Hide raw output by default
-                     "Parse Error": None # Hide parse error by default
-                }
-            )
-
-            calculate_button = st.button("📊 Calculate Metrics", key="calc_metrics", type="primary")
-
-            if calculate_button:
-                # --- Metric Calculation Logic ---
-                # Use the edited DataFrame from the data_editor's state
-                final_results_list = edited_df.to_dict('records')
-                total_fields = len(final_results_list)
-                success_count = 0
-                error_count = 0
-                not_found_count = 0
-                rate_limit_count = 0
-                exact_match_count = 0
-                case_insensitive_match_count = 0
-                total_latency = 0.0
-                valid_latency_count = 0 # Count fields where latency is meaningful
-
-                for result in final_results_list:
-                    extracted = str(result['Extracted Value']).strip()
-                    ground_truth = str(result['Ground Truth']).strip()
-
-                    # Normalize "NOT FOUND" variations for comparison
-                    extracted_norm = "NOT FOUND" if "not found" in extracted.lower() else extracted
-                    gt_norm = "NOT FOUND" if "not found" in ground_truth.lower() else ground_truth
-                    gt_norm = "NOT FOUND" if ground_truth == "" else gt_norm # Treat empty GT as NOT FOUND
-
-                    # Calculate matches
-                    is_exact_match = False
-                    is_case_insensitive_match = False
-
-                    # Only calculate accuracy if not an error/rate limit and GT provided
-                    if not result['Is Error'] and not result['Is Rate Limit']:
-                        if extracted_norm == gt_norm:
-                            is_exact_match = True
-                            is_case_insensitive_match = True # Exact implies case-insensitive
-                            if gt_norm != "NOT FOUND": # Count matches only if GT wasn't NOT FOUND
-                                exact_match_count += 1
-                                case_insensitive_match_count += 1
-                        elif extracted_norm.lower() == gt_norm.lower():
-                            is_case_insensitive_match = True
-                            if gt_norm != "NOT FOUND":
-                                 case_insensitive_match_count += 1
-
-                    result['Exact Match'] = is_exact_match
-                    result['Case-Insensitive Match'] = is_case_insensitive_match
-
-                    # Count outcomes
-                    if result['Is Success']: success_count += 1
-                    if result['Is Error']: error_count += 1
-                    if result['Is Not Found']: not_found_count += 1 # Count how many times LLM *returned* NOT FOUND
-                    if result['Is Rate Limit']: rate_limit_count += 1
-
-                    # Sum latency
-                    if isinstance(result['Latency (s)'], (int, float)):
-                        total_latency += result['Latency (s)']
-                        valid_latency_count += 1
+            # If you still want to proceed even with errors, you might set the flag here:
+            # st.session_state.extraction_performed = True
 
 
-                # Calculate overall metrics
-                accuracy_denominator = total_fields - error_count - rate_limit_count - not_found_count # Base accuracy on successful, non-"NOT FOUND" extractions
+    # --- Block 2: Display Ground Truth / Metrics (if results exist) ---
+    # This part now runs regardless of the extraction_performed flag, using existing results
+    # It will run immediately after the extraction block finishes in the same script run (if extraction was needed)
+    # Or it will run on subsequent reruns if results are already present
+    if st.session_state.evaluation_results:
+        st.divider()
+        st.header("3. Enter Ground Truth & Evaluate")
 
-                st.session_state.evaluation_metrics = {
-                    "Total Fields": total_fields,
-                    "Success Count": success_count,
-                    "Error Count": error_count,
-                    "Not Found Count (Extracted)": not_found_count,
-                    "Rate Limit Count": rate_limit_count,
-                    "Exact Match Count": exact_match_count,
-                    "Case-Insensitive Match Count": case_insensitive_match_count,
-                    "Accuracy Denominator": accuracy_denominator, # Fields where accuracy is meaningful
-                    "Success Rate (%)": (success_count / total_fields * 100) if total_fields > 0 else 0,
-                    "Error Rate (%)": (error_count / total_fields * 100) if total_fields > 0 else 0,
-                    "Not Found Rate (%)": (not_found_count / total_fields * 100) if total_fields > 0 else 0,
-                    "Rate Limit Rate (%)": (rate_limit_count / total_fields * 100) if total_fields > 0 else 0,
-                    "Exact Match Accuracy (%)": (exact_match_count / accuracy_denominator * 100) if accuracy_denominator > 0 else 0,
-                    "Case-Insensitive Accuracy (%)": (case_insensitive_match_count / accuracy_denominator * 100) if accuracy_denominator > 0 else 0,
-                    "Average Latency (s)": (total_latency / valid_latency_count) if valid_latency_count > 0 else 0,
-                }
+        # Convert results to DataFrame for easier editing
+        results_df = pd.DataFrame(st.session_state.evaluation_results)
 
-                # Update the main results list with comparison outcomes
-                st.session_state.evaluation_results = final_results_list
-                st.success("Metrics calculated successfully!")
-                # Rerun slightly to update the display sections below
-                st.rerun()
+        st.info("Enter the correct 'Ground Truth' value for each field below. Leave blank if the field shouldn't exist or 'NOT FOUND' is correct.")
+
+        # Define which columns are editable
+        # Make only 'Ground Truth' editable
+        disabled_cols = [col for col in results_df.columns if col != 'Ground Truth']
+
+        # Use data editor for ground truth input
+        edited_df = st.data_editor(
+            results_df,
+            key="gt_editor", # Assign a key to access the edited state
+            use_container_width=True,
+            num_rows="dynamic", # Allow variable number of rows
+            disabled=disabled_cols, # Disable editing for all but Ground Truth
+            column_config={ # Optional: Improve display
+                 "Prompt Name": st.column_config.TextColumn(width="medium"),
+                 "Extracted Value": st.column_config.TextColumn(width="medium"),
+                 "Ground Truth": st.column_config.TextColumn(width="medium", help="Enter the correct value here"),
+                 "Is Success": st.column_config.CheckboxColumn(width="small"),
+                 "Is Error": st.column_config.CheckboxColumn(width="small"),
+                 "Is Not Found": st.column_config.CheckboxColumn(width="small"),
+                 "Is Rate Limit": st.column_config.CheckboxColumn(width="small"),
+                 "Latency (s)": st.column_config.NumberColumn(format="%.2f", width="small"),
+                 "Exact Match": st.column_config.CheckboxColumn(width="small"),
+                 "Case-Insensitive Match": st.column_config.CheckboxColumn(width="small"),
+                 "Raw Output": None, # Hide raw output by default
+                 "Parse Error": None # Hide parse error by default
+            }
+        )
+
+        calculate_button = st.button("📊 Calculate Metrics", key="calc_metrics", type="primary")
+
+        if calculate_button:
+            # --- Metric Calculation Logic ---
+            # Use the edited DataFrame from the data_editor's state
+            final_results_list = edited_df.to_dict('records')
+            total_fields = len(final_results_list)
+            success_count = 0
+            error_count = 0
+            not_found_count = 0
+            rate_limit_count = 0
+            exact_match_count = 0
+            case_insensitive_match_count = 0
+            total_latency = 0.0
+            valid_latency_count = 0 # Count fields where latency is meaningful
+
+            for result in final_results_list:
+                extracted = str(result['Extracted Value']).strip()
+                ground_truth = str(result['Ground Truth']).strip()
+
+                # Normalize "NOT FOUND" variations for comparison
+                extracted_norm = "NOT FOUND" if "not found" in extracted.lower() else extracted
+                gt_norm = "NOT FOUND" if "not found" in ground_truth.lower() else ground_truth
+                gt_norm = "NOT FOUND" if ground_truth == "" else gt_norm # Treat empty GT as NOT FOUND
+
+                # Calculate matches
+                is_exact_match = False
+                is_case_insensitive_match = False
+
+                # Only calculate accuracy if not an error/rate limit and GT provided
+                if not result['Is Error'] and not result['Is Rate Limit']:
+                    if extracted_norm == gt_norm:
+                        is_exact_match = True
+                        is_case_insensitive_match = True # Exact implies case-insensitive
+                        if gt_norm != "NOT FOUND": # Count matches only if GT wasn't NOT FOUND
+                            exact_match_count += 1
+                            case_insensitive_match_count += 1
+                    elif extracted_norm.lower() == gt_norm.lower():
+                        is_case_insensitive_match = True
+                        if gt_norm != "NOT FOUND":
+                             case_insensitive_match_count += 1
+
+                result['Exact Match'] = is_exact_match
+                result['Case-Insensitive Match'] = is_case_insensitive_match
+
+                # Count outcomes
+                if result['Is Success']: success_count += 1
+                if result['Is Error']: error_count += 1
+                if result['Is Not Found']: not_found_count += 1 # Count how many times LLM *returned* NOT FOUND
+                if result['Is Rate Limit']: rate_limit_count += 1
+
+                # Sum latency
+                if isinstance(result['Latency (s)'], (int, float)):
+                    total_latency += result['Latency (s)']
+                    valid_latency_count += 1
+
+
+            # Calculate overall metrics
+            accuracy_denominator = total_fields - error_count - rate_limit_count - not_found_count # Base accuracy on successful, non-"NOT FOUND" extractions
+
+            st.session_state.evaluation_metrics = {
+                "Total Fields": total_fields,
+                "Success Count": success_count,
+                "Error Count": error_count,
+                "Not Found Count (Extracted)": not_found_count,
+                "Rate Limit Count": rate_limit_count,
+                "Exact Match Count": exact_match_count,
+                "Case-Insensitive Match Count": case_insensitive_match_count,
+                "Accuracy Denominator": accuracy_denominator, # Fields where accuracy is meaningful
+                "Success Rate (%)": (success_count / total_fields * 100) if total_fields > 0 else 0,
+                "Error Rate (%)": (error_count / total_fields * 100) if total_fields > 0 else 0,
+                "Not Found Rate (%)": (not_found_count / total_fields * 100) if total_fields > 0 else 0,
+                "Rate Limit Rate (%)": (rate_limit_count / total_fields * 100) if total_fields > 0 else 0,
+                "Exact Match Accuracy (%)": (exact_match_count / accuracy_denominator * 100) if accuracy_denominator > 0 else 0,
+                "Case-Insensitive Accuracy (%)": (case_insensitive_match_count / accuracy_denominator * 100) if accuracy_denominator > 0 else 0,
+                "Average Latency (s)": (total_latency / valid_latency_count) if valid_latency_count > 0 else 0,
+            }
+
+            # Update the main results list with comparison outcomes
+            st.session_state.evaluation_results = final_results_list
+            st.success("Metrics calculated successfully!")
+            # Rerun slightly to update the display sections below
+            st.rerun()
 
         # --- Display Metrics Section ---
         st.divider()
@@ -664,13 +669,14 @@ else:
         else:
             st.info("Process documents and calculate metrics to enable export.")
 
+    # --- Block 3: Handle cases where extraction ran but yielded nothing, or hasn't run ---
     elif st.session_state.extraction_chain and st.session_state.extraction_performed:
-        # If extraction ran but produced no results (e.g., all errors/empty)
+        # This condition is now reached if extraction_performed is True,
+        # but evaluation_results is still empty (e.g., all extractions failed critically,
+        # or the extraction_successful flag logic prevented storing results).
         st.warning("Extraction process completed, but no valid results were generated. Check logs or raw outputs if available.")
-    elif st.session_state.extraction_chain and not st.session_state.extraction_performed:
-        # This case should ideally not be reached if the logic above works,
-        # but serves as a fallback message.
-        st.info("Extraction is pending or encountered an issue before completing.")
+    # Optional: Add an else block here if needed for the case where extraction_chain exists but extraction_performed is False
+    # (e.g., to show a "Click Process to start extraction" message, though the main extraction block usually handles this)
 
 
 # REMOVE the previous Q&A section entirely (already done)
