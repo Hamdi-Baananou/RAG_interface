@@ -1188,8 +1188,8 @@ Determine closed cavities using this reasoning chain:
     → NAME OF CLOSED CAVITIES: none
 
     \"Closed cavities unspecified\"
-    → REASONING: [Step4] Ambiguous → **NOT FOUND**
-    → NAME OF CLOSED CAVITIES: NOT FOUND
+    → REASONING: [Step4] Ambiguous → **none**
+    → NAME OF CLOSED CAVITIES: none
 
     Output format:
     NAME OF CLOSED CAVITIES: [numbers/none]
