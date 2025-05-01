@@ -267,13 +267,21 @@ async def scrape_website_table_html(part_number: str) -> Optional[str]:
         js_code = site_config.get("pre_extraction_js")
         logger.debug(f"Attempting scrape on {site_config['name']} ({target_url}) for table selector '{selector}'")
 
-        # Configure crawler run - we just need the HTML content, no complex extraction strategy
-        # Create a single config object, not a list
+        # Configure crawler run - Use JsonCssExtractionStrategy to get outerHTML
+        extraction_schema = {
+            "name": "TableHTML",
+            "baseSelector": "html", # Apply to whole document
+            "fields": [
+                # Try type: "html" to get the inner/outer HTML of the element
+                {"name": "html_content", "selector": selector, "type": "html"}
+            ]
+        }
         run_config = CrawlerRunConfig(
                  cache_mode=CacheMode.BYPASS,
                  js_code=[js_code] if js_code else None,
                  page_timeout=20000,
-                 verbose=False # Set to True for detailed crawl4ai logs
+                 verbose=False, # Set to True for detailed crawl4ai logs
+                 extraction_strategy=JsonCssExtractionStrategy(extraction_schema) # Add strategy
             )
         browser_config = BrowserConfig(verbose=False) # Headless default
 
@@ -283,34 +291,37 @@ async def scrape_website_table_html(part_number: str) -> Optional[str]:
                 results = await crawler.arun_many(urls=[target_url], config=run_config)
                 result = results[0]
 
-                # Check for success and the presence of the page object
-                if result.success and result.page:
-                    # Use crawl4ai's built-in ability to extract elements using selectors AFTER crawl
-                    # This avoids needing a complex extraction strategy just for outerHTML
+                # Check for success and extracted content from the strategy
+                if result.success and result.extracted_content:
                     try:
-                        table_element = await result.page.query_selector(selector)
-                        if table_element:
-                            table_html = await table_element.evaluate("element => element.outerHTML")
-                            if table_html and table_html.strip():
-                                logger.success(f"Successfully scraped features table HTML from {site_config['name']}.")
-                                # Clean up the page/browser context explicitly? Not usually needed with context manager.
-                                # await result.page.close() # Might be needed if keeping crawler instance alive
-                                return table_html.strip()
+                        # Expecting JSON like '[{"html_content": "<div>...</div>"}]' or '[]'
+                        extracted_data_list = json.loads(result.extracted_content)
+                        if extracted_data_list and isinstance(extracted_data_list, list) and len(extracted_data_list) > 0:
+                            first_item = extracted_data_list[0]
+                            if isinstance(first_item, dict) and "html_content" in first_item:
+                                table_html = str(first_item["html_content"]).strip()
+                                if table_html:
+                                    logger.success(f"Successfully scraped features table HTML from {site_config['name']} using strategy.")
+                                    return table_html
+                                else:
+                                    logger.debug(f"Extraction strategy returned empty HTML content for '{selector}' on {site_config['name']}.")
                             else:
-                                logger.debug(f"Found table element but outerHTML was empty for '{selector}' on {site_config['name']}.")
+                                logger.debug(f"Unexpected item format in extracted data for table HTML from {site_config['name']}: {first_item}")
                         else:
-                             logger.debug(f"Table selector '{selector}' did not find matching element on {site_config['name']}.")
-                    except Exception as query_error:
-                        logger.error(f"Error querying selector '{selector}' or getting outerHTML on {site_config['name']}: {query_error}", exc_info=True)
+                             logger.debug(f"Extraction strategy did not find or extract HTML for selector '{selector}' on {site_config['name']}.")
+
+                    except json.JSONDecodeError:
+                         logger.warning(f"Failed to parse JSON from crawl4ai extraction result for table HTML on {site_config['name']}: {result.extracted_content[:100]}...")
+                    except Exception as parse_error:
+                         logger.error(f"Error processing extracted table HTML result for {site_config['name']}: {parse_error}", exc_info=True)
+
                 elif result.error_message:
                      logger.warning(f"Scraping page failed for {site_config['name']} ({target_url}): {result.error_message}")
                 else:
-                     logger.debug(f"Scraping attempt for {site_config['name']} yielded no HTML content or error.")
+                    logger.debug(f"Scraping attempt for {site_config['name']} yielded no extracted content or error message.")
 
         except asyncio.TimeoutError:
              logger.warning(f"Scraping timed out for {site_config['name']} ({target_url})")
-        except Exception as e:
-            logger.error(f"Unexpected error during web scraping for {site_config['name']} ({target_url}): {e}", exc_info=True)
 
     logger.info(f"Web scraping finished for features table. No table HTML found across configured sites.")
     return None
