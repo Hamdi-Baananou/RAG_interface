@@ -272,7 +272,6 @@ async def scrape_website_table_html(part_number: str) -> Optional[str]:
              CrawlerRunConfig(
                  cache_mode=CacheMode.BYPASS,
                  js_code=[js_code] if js_code else None,
-                 wait_for_network_idle=True if js_code else False,
                  page_timeout=20000,
                  verbose=False # Set to True for detailed crawl4ai logs
             )
