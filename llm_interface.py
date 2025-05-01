@@ -268,19 +268,19 @@ async def scrape_website_table_html(part_number: str) -> Optional[str]:
         logger.debug(f"Attempting scrape on {site_config['name']} ({target_url}) for table selector '{selector}'")
 
         # Configure crawler run - we just need the HTML content, no complex extraction strategy
-        run_config_list = [
-             CrawlerRunConfig(
+        # Create a single config object, not a list
+        run_config = CrawlerRunConfig(
                  cache_mode=CacheMode.BYPASS,
                  js_code=[js_code] if js_code else None,
                  page_timeout=20000,
                  verbose=False # Set to True for detailed crawl4ai logs
             )
-        ]
         browser_config = BrowserConfig(verbose=False) # Headless default
 
         try:
             async with AsyncWebCrawler(config=browser_config) as crawler:
-                results = await crawler.arun_many(urls=[target_url], config=run_config_list)
+                # Pass the single run_config object
+                results = await crawler.arun_many(urls=[target_url], config=run_config)
                 result = results[0]
 
                 if result.success and result.html_content:
