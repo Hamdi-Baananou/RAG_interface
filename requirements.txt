@@ -22,3 +22,4 @@ numpy~=1.26.0 # <-- Pin numpy version explicitly
 torch~=2.2.0 # Or try 2.1.0 if 2.2 gives issues
 transformers~=4.40.0
 accelerate~=0.29.0 # Match accelerate version that works well with transformers
+protobuf<3.21
