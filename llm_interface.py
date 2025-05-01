@@ -16,6 +16,7 @@ import config # Import configuration
 import asyncio # Need asyncio for crawl4ai
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 from crawl4ai.extraction_strategy import JsonCssExtractionStrategy
+from bs4 import BeautifulSoup # Import BeautifulSoup
 
 # --- Initialize LLM ---
 @logger.catch(reraise=True) # Keep catch for unexpected errors during init
@@ -240,16 +241,85 @@ WEBSITE_CONFIGS = [
     # Add other supplier websites here following the same structure
 ]
 
-# --- Web Scraping Function (Revised for Table HTML) ---
-async def scrape_website_table_html(part_number: str) -> Optional[str]:
+# --- HTML Cleaning Function ---
+def clean_scraped_html(html_content: str, site_name: str) -> Optional[str]:
     """
-    Attempts to scrape the outer HTML of a features table for a given part number from configured websites.
+    Parses scraped HTML using BeautifulSoup and extracts key-value pairs
+    from known structures (e.g., TE Connectivity feature lists).
 
     Args:
-        part_number: The part number to search for.
+        html_content: The raw HTML string scraped from the website.
+        site_name: The name of the site (e.g., "TE Connectivity") to apply specific parsing logic.
 
     Returns:
-        The outer HTML of the table as a string if found, otherwise None.
+        A cleaned string representation (e.g., "Key: Value\\nKey: Value") or None if parsing fails.
+    """
+    if not html_content:
+        return None
+
+    logger.debug(f"Cleaning HTML content from {site_name}...")
+    soup = BeautifulSoup(html_content, 'html.parser')
+    extracted_texts = []
+
+    try:
+        # --- Add site-specific parsing logic here --- 
+        if site_name == "TE Connectivity":
+            # Find all feature list items within the main panel
+            feature_items = soup.find_all('li', class_='product-feature')
+            if not feature_items:
+                 # Maybe the main selector was wrong? Try finding the panel first
+                 panel = soup.find(id='pdp-features-tabpanel')
+                 if panel:
+                      feature_items = panel.find_all('li', class_='product-feature')
+                 
+            if feature_items:
+                for item in feature_items:
+                    title_span = item.find('span', class_='feature-title')
+                    value_em = item.find('em', class_='feature-value')
+                    if title_span and value_em:
+                        title = title_span.get_text(strip=True).replace(':', '').strip()
+                        value = value_em.get_text(strip=True)
+                        if title and value:
+                            extracted_texts.append(f"{title}: {value}")
+                logger.info(f"Extracted {len(extracted_texts)} features from TE Connectivity HTML.")
+            else:
+                 logger.warning(f"Could not find 'li.product-feature' items in the TE Connectivity HTML provided.")
+
+        elif site_name == "TraceParts":
+            # Add parsing logic specific to TraceParts HTML structure here
+            # Example: Find a table and extract rows/cells
+            # data_table = soup.find('table', class_='technical-data-table') # Example selector
+            # if data_table:
+            #    for row in data_table.find_all('tr'):
+            #        cells = row.find_all('td') # or 'th'
+            #        if len(cells) == 2:
+            #             key = cells[0].get_text(strip=True).replace(':', '').strip()
+            #             value = cells[1].get_text(strip=True)
+            #             if key and value:
+            #                 extracted_texts.append(f"{key}: {value}")
+            logger.warning(f"HTML cleaning logic for TraceParts is not implemented yet.")
+            pass # Placeholder
+
+        # Add logic for other sites if needed
+        else:
+            logger.warning(f"No specific HTML cleaning logic defined for site: {site_name}. Returning raw text content as fallback.")
+            # Fallback: return just the text content of the whole block
+            return soup.get_text(separator=' ', strip=True)
+
+        if not extracted_texts:
+            logger.warning(f"HTML cleaning for {site_name} resulted in no text extracted.")
+            return None # Return None if nothing was extracted
+
+        return "\\n".join(extracted_texts)
+
+    except Exception as e:
+        logger.error(f"Error cleaning HTML for {site_name}: {e}", exc_info=True)
+        return None # Return None on parsing error
+
+# --- Web Scraping Function (Revised to call cleaner) ---
+async def scrape_website_table_html(part_number: str) -> Optional[str]:
+    """
+    Attempts to scrape the outer HTML of a features table, then cleans it.
     """
     if not part_number:
         logger.debug("Web scraping skipped: No part number provided.")
@@ -259,13 +329,14 @@ async def scrape_website_table_html(part_number: str) -> Optional[str]:
 
     for site_config in WEBSITE_CONFIGS:
         selector = site_config.get("table_selector")
+        site_name = site_config.get("name", "Unknown Site") # Get site name for cleaner
         if not selector:
-             logger.warning(f"No table_selector defined for {site_config['name']}. Skipping.")
+             logger.warning(f"No table_selector defined for {site_name}. Skipping.")
              continue
 
         target_url = site_config["base_url_template"].format(part_number=part_number)
         js_code = site_config.get("pre_extraction_js")
-        logger.debug(f"Attempting scrape on {site_config['name']} ({target_url}) for table selector '{selector}'")
+        logger.debug(f"Attempting scrape on {site_name} ({target_url}) for table selector '{selector}'")
 
         # Configure crawler run - Use JsonCssExtractionStrategy to get outerHTML
         extraction_schema = {
@@ -293,65 +364,68 @@ async def scrape_website_table_html(part_number: str) -> Optional[str]:
 
                 # Check for success and extracted content from the strategy
                 if result.success and result.extracted_content:
+                    raw_html = None
                     try:
-                        # Expecting JSON like '[{"html_content": "<div>...</div>"}]' or '[]'
                         extracted_data_list = json.loads(result.extracted_content)
                         if extracted_data_list and isinstance(extracted_data_list, list) and len(extracted_data_list) > 0:
                             first_item = extracted_data_list[0]
                             if isinstance(first_item, dict) and "html_content" in first_item:
-                                table_html = str(first_item["html_content"]).strip()
-                                if table_html:
-                                    logger.success(f"Successfully scraped features table HTML from {site_config['name']} using strategy.")
-                                    return table_html
-                                else:
-                                    logger.debug(f"Extraction strategy returned empty HTML content for '{selector}' on {site_config['name']}.")
-                            else:
-                                logger.debug(f"Unexpected item format in extracted data for table HTML from {site_config['name']}: {first_item}")
+                                raw_html = str(first_item["html_content"]).strip()
                         else:
-                             logger.debug(f"Extraction strategy did not find or extract HTML for selector '{selector}' on {site_config['name']}.")
+                            logger.debug(f"Extraction strategy did not find or extract HTML for selector '{selector}' on {site_name}.")
 
                     except json.JSONDecodeError:
-                         logger.warning(f"Failed to parse JSON from crawl4ai extraction result for table HTML on {site_config['name']}: {result.extracted_content[:100]}...")
+                         logger.warning(f"Failed to parse JSON from crawl4ai extraction result for table HTML on {site_name}: {result.extracted_content[:100]}...")
                     except Exception as parse_error:
-                         logger.error(f"Error processing extracted table HTML result for {site_config['name']}: {parse_error}", exc_info=True)
+                         logger.error(f"Error processing extracted JSON for {site_name}: {parse_error}", exc_info=True)
+
+                    # --- Pass raw HTML to cleaner --- 
+                    if raw_html:
+                        cleaned_text = clean_scraped_html(raw_html, site_name)
+                        if cleaned_text:
+                            logger.success(f"Successfully scraped and cleaned features table from {site_name}.")
+                            return cleaned_text # Return the cleaned text
+                        else:
+                             logger.warning(f"HTML was scraped from {site_name}, but cleaning failed or yielded no text.")
+                    # else: (already logged failure to extract HTML)
 
                 elif result.error_message:
-                     logger.warning(f"Scraping page failed for {site_config['name']} ({target_url}): {result.error_message}")
+                     logger.warning(f"Scraping page failed for {site_name} ({target_url}): {result.error_message}")
                 else:
-                    logger.debug(f"Scraping attempt for {site_config['name']} yielded no extracted content or error message.")
+                    logger.debug(f"Scraping attempt for {site_name} yielded no extracted content or error message.")
 
         except asyncio.TimeoutError:
-             logger.warning(f"Scraping timed out for {site_config['name']} ({target_url})")
+             logger.warning(f"Scraping timed out for {site_name} ({target_url})")
+        except Exception as e:
+            logger.error(f"Unexpected error during web scraping for {site_name} ({target_url}): {e}", exc_info=True)
 
-    logger.info(f"Web scraping finished for features table. No table HTML found across configured sites.")
+    logger.info(f"Web scraping finished for features table. No usable cleaned text found across configured sites.")
     return None
 
 
-# --- Extraction Chain (Revised Prompt Template) ---
+# --- Extraction Chain (Revised Prompt Template - MINOR CHANGE) ---
 def create_extraction_chain(retriever, llm):
     """
-    Creates a RAG chain that uses both PDF context and potentially scraped web table HTML
-    to answer an extraction instruction, prioritizing the scraped HTML.
+    Creates a RAG chain that uses both PDF context and potentially cleaned scraped web table data
+    to answer an extraction instruction, prioritizing the scraped data.
     """
     if retriever is None or llm is None:
         logger.error("Retriever or LLM is not initialized for extraction chain.")
         return None
 
-    # --- Updated Template to Prioritize Scraped HTML ---
+    # --- Updated Template to reflect cleaned data ---
     template = """
 You are an expert data extractor. Your goal is to extract a specific piece of information based on the Extraction Instructions provided below.
 You are given two potential sources of information:
-1. Scraped HTML Content: This is HTML snippet, likely a table or section, scraped directly from a supplier website for the part number. THIS SOURCE IS PREFERRED AND SHOULD BE USED IF THE INFORMATION IS PRESENT AND CLEAR.
-2. Document Context: These are text chunks extracted from PDF documents related to the part number. Use this as a fallback if the Scraped HTML Content is missing, doesn't contain the required information, or is ambiguous.
+1. Cleaned Scraped Website Data: This is cleaned text extracted from a specific section (likely features/specifications) of a supplier website for the part number. THIS SOURCE IS PREFERRED AND SHOULD BE USED IF THE INFORMATION IS PRESENT AND CLEAR.
+2. Document Context: These are text chunks extracted from PDF documents related to the part number. Use this as a fallback if the Cleaned Scraped Website Data is missing, doesn't contain the required information, or is ambiguous.
 
 Part Number Information (if provided by user):
 {part_number}
 
 --- PREFERRED SOURCE ---
-Scraped HTML Content (from supplier website):
-```html
-{scraped_table_html}
-```
+Cleaned Scraped Website Data:
+{scraped_table_html} 
 --- END PREFERRED SOURCE ---
 
 --- FALLBACK SOURCE ---
@@ -365,13 +439,13 @@ Extraction Instructions:
 ---
 IMPORTANT: Respond with ONLY a single, valid JSON object containing exactly one key-value pair.
 - The key for the JSON object MUST be the string: "{attribute_key}"
-- The value MUST be the extracted result determined by following the Extraction Instructions, prioritizing the 'Scraped HTML Content' if available and relevant.
+- The value MUST be the extracted result determined by following the Extraction Instructions, prioritizing the 'Cleaned Scraped Website Data' if available and relevant.
 - Provide the value as a JSON string. Examples of possible values include "GF, T", "none", "NOT FOUND", "Female", "7.2", "999".
-- If the information cannot be found in EITHER the Scraped HTML Content OR the Document Context based on the instructions, the value should be "NOT FOUND".
+- If the information cannot be found in EITHER the Cleaned Scraped Website Data OR the Document Context based on the instructions, the value should be "NOT FOUND".
 - Do NOT include any explanations, reasoning, or any text outside of the single JSON object in your response.
 
 Example Output Format:
-{{"{attribute_key}": "extracted_value_from_html_or_pdf"}}
+{{"{attribute_key}": "extracted_value_from_web_or_pdf"}}
 
 Output:
 """
@@ -379,6 +453,7 @@ Output:
 
     # Define the extraction chain using LCEL
     # Takes 'extraction_instructions', 'attribute_key', 'part_number', and 'scraped_table_html' as input
+    # Note: 'scraped_table_html' placeholder now holds the CLEANED TEXT
     extraction_chain = (
         RunnableParallel(
             # Retrieve PDF context based on the attribute_key and part_number
@@ -387,7 +462,7 @@ Output:
             extraction_instructions=RunnablePassthrough(),
             attribute_key=RunnablePassthrough(),
             part_number=RunnablePassthrough(),
-            scraped_table_html=RunnablePassthrough() # Pass the scraped HTML
+            scraped_table_html=RunnablePassthrough() # Pass the cleaned text
         )
         # Assign the inputs correctly to the prompt variables
         # Ensure all inputs exist in the dictionary passed to assign
@@ -395,7 +470,7 @@ Output:
             extraction_instructions=lambda x: x['extraction_instructions']['extraction_instructions'],
             attribute_key=lambda x: x['attribute_key']['attribute_key'],
             part_number=lambda x: x['part_number'].get('part_number', "Not Provided"),
-            scraped_table_html=lambda x: x['scraped_table_html'].get('scraped_table_html', "Not Available") # Get scraped HTML safely
+            scraped_table_html=lambda x: x['scraped_table_html'].get('scraped_table_html', "Not Available") # Get cleaned text safely
         )
         | prompt
         | llm

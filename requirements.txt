@@ -16,6 +16,7 @@ pysqlite3-binary # Required by chromadb on Streamlit Cloud for sqlite3 version >
 # tiktoken # Often needed implicitly by langchain text splitters/models, good to add
 # faiss-cpu # Optional alternative vector store
 crawl4ai # Add crawl4ai for web scraping
+beautifulsoup4 # Add beautifulsoup4 for HTML cleaning
 
 numpy~=1.26.0 # <-- Pin numpy version explicitly
 
