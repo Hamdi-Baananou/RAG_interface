@@ -283,21 +283,25 @@ async def scrape_website_table_html(part_number: str) -> Optional[str]:
                 results = await crawler.arun_many(urls=[target_url], config=run_config)
                 result = results[0]
 
-                if result.success and result.html_content:
+                # Check for success and the presence of the page object
+                if result.success and result.page:
                     # Use crawl4ai's built-in ability to extract elements using selectors AFTER crawl
                     # This avoids needing a complex extraction strategy just for outerHTML
-                    table_element = await result.page.query_selector(selector)
-                    if table_element:
-                        table_html = await table_element.evaluate("element => element.outerHTML")
-                        if table_html and table_html.strip():
-                            logger.success(f"Successfully scraped features table HTML from {site_config['name']}.")
-                            # Clean up the page/browser context explicitly? Not usually needed with context manager.
-                            # await result.page.close() # Might be needed if keeping crawler instance alive
-                            return table_html.strip()
+                    try:
+                        table_element = await result.page.query_selector(selector)
+                        if table_element:
+                            table_html = await table_element.evaluate("element => element.outerHTML")
+                            if table_html and table_html.strip():
+                                logger.success(f"Successfully scraped features table HTML from {site_config['name']}.")
+                                # Clean up the page/browser context explicitly? Not usually needed with context manager.
+                                # await result.page.close() # Might be needed if keeping crawler instance alive
+                                return table_html.strip()
+                            else:
+                                logger.debug(f"Found table element but outerHTML was empty for '{selector}' on {site_config['name']}.")
                         else:
-                            logger.debug(f"Found table element but outerHTML was empty for '{selector}' on {site_config['name']}.")
-                    else:
-                         logger.debug(f"Table selector '{selector}' did not find matching element on {site_config['name']}.")
+                             logger.debug(f"Table selector '{selector}' did not find matching element on {site_config['name']}.")
+                    except Exception as query_error:
+                        logger.error(f"Error querying selector '{selector}' or getting outerHTML on {site_config['name']}: {query_error}", exc_info=True)
                 elif result.error_message:
                      logger.warning(f"Scraping page failed for {site_config['name']} ({target_url}): {result.error_message}")
                 else:
