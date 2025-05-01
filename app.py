@@ -13,6 +13,7 @@ from loguru import logger
 import json # Import the json library
 import pandas as pd # Add pandas import
 import re # Import the 're' module for regular expressions
+import asyncio # Add asyncio import
 
 # Import project modules
 import config
@@ -26,7 +27,8 @@ from vector_store import (
 from llm_interface import (
     initialize_llm,
     create_extraction_chain, # Revert back to this
-    run_extraction         # Revert back to this
+    run_extraction,         # Revert back to this
+    scrape_website_table_html
 )
 # Import the prompts
 from extraction_prompts import (
@@ -93,6 +95,10 @@ if 'evaluation_metrics' not in st.session_state:
 # Add flag to track if extraction has run for the current data
 if 'extraction_performed' not in st.session_state:
     st.session_state.extraction_performed = False
+if 'scraped_table_html_cache' not in st.session_state:
+    st.session_state.scraped_table_html_cache = None # Cache for scraped HTML for the current part number
+if 'current_part_number_scraped' not in st.session_state:
+    st.session_state.current_part_number_scraped = None # Track which part number was last scraped for
 
 # --- Global Variables / Initialization ---
 # Initialize embeddings (this is relatively heavy, do it once)
@@ -147,6 +153,8 @@ def reset_evaluation_state():
     st.session_state.evaluation_results = []
     st.session_state.evaluation_metrics = None
     st.session_state.extraction_performed = False # Reset the flag here too
+    st.session_state.scraped_table_html_cache = None # Clear scraped HTML cache
+    st.session_state.current_part_number_scraped = None # Clear scraped part number tracker
     # Clear data editor state if it exists
     if 'gt_editor' in st.session_state:
         del st.session_state['gt_editor']
@@ -326,6 +334,62 @@ else:
         extraction_results_list = [] # Temp list to build results
         extraction_successful = True # Flag to track if all extractions ran without major issues preventing state update
 
+        # --- Get current asyncio event loop --- 
+        # Streamlit runs in its own thread, ensure we have an event loop
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:  # 'RuntimeError: There is no current event loop...'
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        # -------------------------------------
+
+        # --- Block 1a: Scrape Web Table HTML (if needed) --- 
+        scraped_table_html = None # Initialize
+        if part_number: # Only scrape if part number is provided
+            # Check cache first
+            if st.session_state.current_part_number_scraped == part_number and st.session_state.scraped_table_html_cache is not None:
+                 logger.info(f"Using cached scraped HTML for part number {part_number}.")
+                 scraped_table_html = st.session_state.scraped_table_html_cache
+            else:
+                 # Scrape and update cache
+                 logger.info(f"Part number {part_number} changed or not cached. Attempting web scrape...")
+                 with st.spinner("Attempting to scrape data from supplier websites..."):
+                     scrape_start_time = time.time()
+                     try:
+                          # Ensure scrape_website_table_html is imported from llm_interface
+                          from llm_interface import scrape_website_table_html
+                          scraped_table_html = loop.run_until_complete(scrape_website_table_html(part_number))
+                          scrape_time = time.time() - scrape_start_time
+                          if scraped_table_html:
+                              logger.success(f"Web scraping successful in {scrape_time:.2f} seconds.")
+                              # Optionally show a success message or the source?
+                              st.caption(f"ℹ️ Using scraped data from web for part# {part_number}.") # Temporary info
+                          else:
+                              logger.warning(f"Web scraping attempted but failed to find table HTML in {scrape_time:.2f} seconds.")
+                              st.caption(f"⚠️ Web scraping failed for part# {part_number}, using PDF data only.") # Temporary info
+                          # Update cache
+                          st.session_state.scraped_table_html_cache = scraped_table_html
+                          st.session_state.current_part_number_scraped = part_number
+                     except Exception as scrape_e:
+                          scrape_time = time.time() - scrape_start_time
+                          logger.error(f"Error during web scraping ({scrape_time:.2f}s): {scrape_e}", exc_info=True)
+                          st.warning(f"An error occurred during web scraping: {scrape_e}. Using PDF data only.")
+                          # Ensure cache is cleared on error
+                          st.session_state.scraped_table_html_cache = None
+                          st.session_state.current_part_number_scraped = part_number # Still mark PN as attempted
+        else:
+             logger.info("No part number provided, skipping web scrape.")
+             # Clear cache if part number is removed
+             if st.session_state.current_part_number_scraped is not None:
+                  st.session_state.scraped_table_html_cache = None
+                  st.session_state.current_part_number_scraped = None
+        # --- End Block 1a ---
+
+
+        # --- Block 1b: Run Extraction Loop --- 
+        # (Moved loop handling outside, loop defined earlier)
+        st.info(f"Running {len(prompts_to_run)} extraction prompts...") # Updated message
+
         for prompt_name, prompt_text in prompts_to_run.items():
             current_col = cols[col_index % 2]
             col_index += 1
@@ -341,21 +405,27 @@ else:
                 with st.spinner(f"Extracting {prompt_name}..."):
                     try:
                         start_time = time.time()
-                        # --- Pass part_number to run_extraction ---
-                        json_result_str = run_extraction(
+                        # --- Call the async run_extraction using the loop --- 
+                        # Pass the potentially scraped HTML to the function
+                        json_result_str = loop.run_until_complete(run_extraction(
                             prompt_text,
                             attribute_key,
                             st.session_state.extraction_chain,
-                            part_number # Pass the retrieved part number here
-                        )
-                        # -----------------------------------------
+                            part_number, # Pass the retrieved part number here
+                            scraped_table_html # Pass the scraped HTML (or None)
+                        ))
+                        # ---------------------------------------------------------
                         run_time = time.time() - start_time
+                        # Remove source determination logic here
+
+                        # Log completion
                         logger.info(f"Extraction for '{prompt_name}' took {run_time:.2f} seconds.")
 
-                        # --- ADD DELAY ---
-                        logger.debug(f"Sleeping for {SLEEP_INTERVAL_SECONDS}s before next request...")
-                        time.sleep(SLEEP_INTERVAL_SECONDS)
-                        # ---------------
+                        # --- ADD DELAY (Only if not rate limited by LLM itself) ---
+                        if not ("Rate Limit Hit" in json_result_str):
+                             logger.debug(f"Sleeping for {SLEEP_INTERVAL_SECONDS}s before next request...")
+                             time.sleep(SLEEP_INTERVAL_SECONDS)
+                        # --------------- 
 
                     except Exception as e:
                         logger.error(f"Error during extraction call for '{prompt_name}': {e}", exc_info=True)
@@ -363,78 +433,74 @@ else:
                         json_result_str = f'{{"error": "Exception during extraction call: {e}"}}'
                         run_time = time.time() - start_time # Record time even on error
 
-                # --- Card Implementation ---
+                # --- Card Implementation --- 
                 with st.container(border=True):
                     st.markdown(f"##### {prompt_name}")
                     thinking_process = "Not available."
                     raw_llm_output = json_result_str # Keep original output for debugging
                     string_to_search = raw_llm_output
                     parse_error = None # Reset parse_error for this item
+                    llm_returned_error_msg = None # Specific error message from LLM JSON
 
-                    # --- Basic Cleaning: Remove <think> tags and ```json ... ``` ---
-                    think_start_tag = "<think>"
-                    think_end_tag = "</think>"
-                    start_index = string_to_search.find(think_start_tag)
-                    end_index = string_to_search.find(think_end_tag)
-                    if start_index != -1 and end_index != -1 and end_index > start_index:
-                        thinking_process = string_to_search[start_index + len(think_start_tag):end_index].strip()
-                        string_to_search = string_to_search[end_index + len(think_end_tag):].strip()
-
-                    if string_to_search.startswith("```json"):
-                        string_to_search = string_to_search[7:]
-                        if string_to_search.endswith("```"):
-                            string_to_search = string_to_search[:-3]
-                    string_to_search = string_to_search.strip() # General strip
-
-                    # --- Enhanced JSON Extraction using Regex ---
+                    # --- Basic Cleaning & JSON Extraction (Combine checks) ---
                     json_string_to_parse = None
-                    parsed_json = None # Initialize parsed_json
+                    parsed_json = None
                     try:
-                        # Search for the first '{...}' block, handling nested braces
-                        match = re.search(r'\{.*\}', string_to_search, re.DOTALL)
-                        if match:
-                            potential_json = match.group(0)
-                            # Attempt to parse the extracted block
-                            parsed_json = json.loads(potential_json)
-                            json_string_to_parse = potential_json # Store the successfully parsed part
-                            logger.debug(f"Successfully parsed JSON extracted via regex for '{prompt_name}'.")
-                        else:
-                            # If regex fails, maybe the original string was already JSON? Try parsing it directly.
-                            parsed_json = json.loads(string_to_search)
-                            json_string_to_parse = string_to_search # Store the successfully parsed part
-                            logger.debug(f"Successfully parsed JSON directly (no regex needed) for '{prompt_name}'.")
+                        # 1. Handle <think> tags
+                        think_start_tag = "<think>"
+                        think_end_tag = "</think>"
+                        start_index = string_to_search.find(think_start_tag)
+                        end_index = string_to_search.find(think_end_tag)
+                        if start_index != -1 and end_index != -1 and end_index > start_index:
+                            thinking_process = string_to_search[start_index + len(think_start_tag):end_index].strip()
+                            string_to_search = string_to_search[end_index + len(think_end_tag):].strip()
 
-                        # --- Value Extraction Logic (Revised) ---
+                        # 2. Handle ```json ... ``` markdown
+                        if string_to_search.startswith("```json"):
+                            string_to_search = string_to_search[7:]
+                            if string_to_search.endswith("```"):
+                                string_to_search = string_to_search[:-3]
+                        string_to_search = string_to_search.strip()
+
+                        # 3. Attempt to parse the cleaned string as JSON
+                        json_string_to_parse = string_to_search # This is what we attempt to parse
+                        parsed_json = json.loads(json_string_to_parse)
+
+                        # --- Value/Error Extraction Logic (using parsed_json) ---
                         if isinstance(parsed_json, dict):
                             actual_keys = list(parsed_json.keys())
-                            if len(actual_keys) == 1:
-                                # Successfully parsed a single key-value pair JSON
-                                actual_key = actual_keys[0]
-                                final_answer_value = str(list(parsed_json.values())[0]) # Get the value
 
-                                # Log a warning if the key is not what was expected, but treat as success
-                                if actual_key != attribute_key:
-                                    logger.warning(f"Key mismatch for '{prompt_name}'. Expected '{attribute_key}', but found '{actual_key}'. Using the value anyway.")
-                                else:
-                                     logger.debug(f"Correct key '{attribute_key}' found and value extracted for '{prompt_name}'.")
-                                parse_error = None # Ensure parse_error is None for this successful path
+                            # Check for expected single key-value pair
+                            if len(actual_keys) == 1 and actual_keys[0] == attribute_key:
+                                final_answer_value = str(list(parsed_json.values())[0])
+                                logger.debug(f"Correct key '{attribute_key}' found and value extracted for '{prompt_name}'.")
+                                parse_error = None # Explicitly success
 
+                            # Check for known error keys returned by run_extraction or LLM
                             elif "error" in parsed_json:
-                                 # Handle specific error responses from the LLM if they are formatted as JSON
-                                 if "rate limit" in parsed_json['error'].lower():
-                                     final_answer_value = "Rate Limit Hit"
-                                     is_rate_limit = True
-                                     parse_error = ValueError("Rate limit hit (reported in JSON).")
-                                 else:
-                                     error_msg = parsed_json['error']
-                                     final_answer_value = f"Error: {error_msg}"
-                                     parse_error = ValueError(f"LLM returned an error in JSON: {error_msg}")
-                                     logger.warning(f"LLM returned error for '{prompt_name}': {error_msg}")
+                                error_msg = parsed_json['error']
+                                llm_returned_error_msg = error_msg # Store this specific error
+                                if "rate limit" in error_msg.lower():
+                                    final_answer_value = "Rate Limit Hit"
+                                    is_rate_limit = True
+                                    parse_error = ValueError("Rate limit hit (reported in JSON).")
+                                else:
+                                    final_answer_value = f"Error: {error_msg[:100]}" # Truncate long errors
+                                    parse_error = ValueError(f"Extraction process reported an error: {error_msg}")
+                                    logger.warning(f"Extraction process returned error for '{prompt_name}': {error_msg}")
+                                # Check if raw LLM output was included in the error JSON
+                                if "raw_llm_output" in parsed_json and thinking_process == "Not available.":
+                                     raw_llm_output = parsed_json["raw_llm_output"] # Use the more detailed raw output
+                                     # Try extracting thinking process from this raw output again
+                                     start_idx = raw_llm_output.find(think_start_tag)
+                                     end_idx = raw_llm_output.find(think_end_tag)
+                                     if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                                          thinking_process = raw_llm_output[start_idx + len(think_start_tag):end_idx].strip()
 
+                            # Handle unexpected JSON structure (multiple keys, not error)
                             else:
-                                # Dictionary found, but not a single key-value pair or known error format
                                 final_answer_value = "Unexpected JSON Format"
-                                parse_error = ValueError(f"Expected single key-value JSON or error key, but got {len(actual_keys)} keys: {actual_keys}")
+                                parse_error = ValueError(f"Expected single key '{attribute_key}' or error key, but got keys: {actual_keys}")
                                 logger.warning(f"Unexpected JSON format for '{prompt_name}'. Keys: {actual_keys}. Parsed JSON: {parsed_json}")
                         else:
                             # Parsed result was not a dictionary
@@ -444,42 +510,48 @@ else:
 
                     except json.JSONDecodeError as json_err:
                         parse_error = json_err
-                        final_answer_value = "Invalid JSON"
-                        logger.error(f"Failed to parse JSON for '{prompt_name}'. Error: {json_err}. String attempted: '{string_to_search}'")
-                        if 'potential_json' in locals() and locals().get('potential_json') != string_to_search:
-                             logger.error(f"Regex extracted this substring for parsing attempt: '{locals().get('potential_json')}'")
-                    # Remove specific KeyError catch as it's handled above
-                    except Exception as parse_exc:
-                        parse_error = parse_exc # Catch any other unexpected errors during parsing/checking
-                        final_answer_value = "Parsing Error"
-                        logger.error(f"Unexpected error processing result for '{prompt_name}'. Error: {parse_exc}. String attempted: '{string_to_search}'")
+                        final_answer_value = "Invalid JSON Response"
+                        logger.error(f"Failed to parse JSON for '{prompt_name}'. Error: {json_err}. String attempted: '{json_string_to_parse}'")
+                        # If original string was different due to cleaning, log it
+                        if raw_llm_output != json_string_to_parse:
+                             logger.error(f"Original raw string before cleaning was: '{raw_llm_output}'")
 
-                    # Determine status flags (Parse error now set for more cases)
-                    is_error = bool(parse_error) or "error" in final_answer_value.lower() or "invalid json" in final_answer_value.lower() or "parsing error" in final_answer_value.lower() or "unexpected json format" in final_answer_value.lower()
-                    is_not_found = "not found" in final_answer_value.lower() # Explicit "NOT FOUND" from prompt
+                    except Exception as processing_exc:
+                        parse_error = processing_exc
+                        final_answer_value = "Processing Error"
+                        logger.error(f"Unexpected error processing result for '{prompt_name}'. Error: {processing_exc}. String attempted: '{json_string_to_parse}'")
+
+                    # Determine status flags based on parsing outcome
+                    is_error = bool(parse_error) and not is_rate_limit # Error if parsing failed or explicit error reported (excluding rate limit)
+                    is_not_found = "not found" in final_answer_value.lower() and not is_error # Explicit "NOT FOUND" from prompt/logic
                     is_success = not is_error and not is_not_found and not is_rate_limit
 
-                    # --- Display Badge ---
+                    # --- Display Badge --- 
                     badge_color = "#dc3545" # Red for error (default)
+                    display_value = final_answer_value
                     if is_success:
                         badge_color = "#28a745" # Green for success
                     elif is_not_found:
                         badge_color = "#ffc107" # Yellow for "NOT FOUND"
                     elif is_rate_limit:
                         badge_color = "#6c757d" # Grey for Rate Limit
-
-                    badge_html = f'<span style="background-color: {badge_color}; color: white; padding: 3px 8px; border-radius: 5px; font-size: 0.9em; word-wrap: break-word; display: inline-block; max-width: 100%;">{final_answer_value}</span>'
+                    
+                    # Remove source tag appending
+                    # source_tag = f" <small>({scraped_source})</small>" if scraped_source else ""
+                    badge_html = f'<span style="background-color: {badge_color}; color: white; padding: 3px 8px; border-radius: 5px; font-size: 0.9em; word-wrap: break-word; display: inline-block; max-width: 100%;">{display_value}</span>' # Removed source_tag
                     st.markdown(badge_html, unsafe_allow_html=True)
 
-                    # --- Store detailed result for evaluation ---
+                    # --- Store detailed result for evaluation --- 
+                    # Remove 'Source' key
                     result_data = {
                         'Prompt Name': prompt_name,
                         'Extracted Value': final_answer_value,
                         'Ground Truth': '', # Placeholder for user input
-                        'Raw Output': json_result_str,
+                        # 'Source': scraped_source if scraped_source else 'LLM', # Remove source info
+                        'Raw Output': raw_llm_output, # Store the original raw output
                         'Parse Error': str(parse_error) if parse_error else None,
                         'Is Success': is_success,
-                        'Is Error': is_error and not is_rate_limit and not is_not_found, # More specific error definition might be needed
+                        'Is Error': is_error,
                         'Is Not Found': is_not_found,
                         'Is Rate Limit': is_rate_limit,
                         'Latency (s)': round(run_time, 2),
@@ -493,34 +565,38 @@ else:
                        # Optionally add more logic here if certain errors shouldn't prevent the flag
                        pass # For now, assume any error still counts as an 'attempt'
 
-                    # --- Expander for Details ---
+                    # --- Expander for Details --- 
                     with st.expander("Show Details"):
                          if thinking_process != "Not available.":
-                              st.markdown("**Thinking Process:**")
+                              st.markdown("**Thinking Process (from LLM):**")
                               st.code(thinking_process, language=None)
                          # Show the string that was *actually* attempted to be parsed by json.loads
-                         st.markdown("**Cleaned String / Regex Match (Attempted Parse):**")
-                         display_string = json_string_to_parse if json_string_to_parse is not None else string_to_search
-                         st.code(display_string, language="json")
+                         st.markdown("**Cleaned String (Attempted JSON Parse):**")
+                         st.code(json_string_to_parse if json_string_to_parse is not None else "(Parsing attempt failed before string cleaning)", language="json")
                          if parse_error:
-                              st.caption(f"Parsing/Validation Error: {parse_error}") # Renamed caption slightly
-                         # Always show the original raw output if it differs significantly
-                         if raw_llm_output.strip() != display_string.strip():
-                              st.markdown("**Original Raw LLM Output:**")
+                              st.caption(f"Parsing/Validation Error: {parse_error}")
+                         # Always show the original raw output if it differs significantly or if there was an error
+                         if is_error or (raw_llm_output.strip() != (json_string_to_parse or "").strip()):
+                              st.markdown("**Original Raw Output (Scraper/LLM):**")
                               st.code(raw_llm_output, language=None)
 
-        # --- End of Extraction Loop ---
+        # --- End of Extraction Loop --- 
+        # Close loop if running
+        # loop.close() # Careful with closing the loop if Streamlit manages it
+
         if extraction_successful: # Only update state if the loop completed reasonably
             st.session_state.evaluation_results = extraction_results_list # Store results in session state
             st.session_state.extraction_performed = True # Set the flag HERE after successful run
             st.success("Automated extraction complete. Enter ground truth below.")
-            # st.rerun() # REMOVE or COMMENT OUT this line
+            st.rerun() # Rerun to update the UI immediately after extraction
         else:
             # Handle case where loop might have been interrupted (optional)
             st.error("Extraction process encountered issues. Some results may be missing.")
             # Decide if partial results should be stored or flag set
             # If you still want to proceed even with errors, you might set the flag here:
-            # st.session_state.extraction_performed = True
+            st.session_state.evaluation_results = extraction_results_list # Store partial results
+            st.session_state.extraction_performed = True # Mark as performed even with errors
+            st.rerun() # Rerun to show partial results
 
 
     # --- Block 2: Display Ground Truth / Metrics (if results exist) ---
@@ -534,11 +610,21 @@ else:
         # Convert results to DataFrame for easier editing
         results_df = pd.DataFrame(st.session_state.evaluation_results)
 
+        # Remove 'Source' column handling
+        # if 'Source' not in results_df.columns:
+        #     results_df['Source'] = 'Unknown' # Add placeholder if missing
+
         st.info("Enter the correct 'Ground Truth' value for each field below. Leave blank if the field shouldn't exist or 'NOT FOUND' is correct.")
 
-        # Define which columns are editable
+        # Define which columns are editable & visible
         # Make only 'Ground Truth' editable
         disabled_cols = [col for col in results_df.columns if col != 'Ground Truth']
+        column_order = [ # Define order and visibility (remove Source)
+            'Prompt Name', 'Extracted Value', 'Ground Truth',
+            'Is Success', 'Is Error', 'Is Not Found', 'Is Rate Limit',
+            'Latency (s)', 'Exact Match', 'Case-Insensitive Match'
+            # Hide Raw Output and Parse Error by default in this view
+        ]
 
         # Use data editor for ground truth input
         edited_df = st.data_editor(
@@ -547,19 +633,21 @@ else:
             use_container_width=True,
             num_rows="dynamic", # Allow variable number of rows
             disabled=disabled_cols, # Disable editing for all but Ground Truth
-            column_config={ # Optional: Improve display
+            column_order=column_order,
+            column_config={ # Optional: Improve display (Remove Source)
                  "Prompt Name": st.column_config.TextColumn(width="medium"),
                  "Extracted Value": st.column_config.TextColumn(width="medium"),
                  "Ground Truth": st.column_config.TextColumn(width="medium", help="Enter the correct value here"),
-                 "Is Success": st.column_config.CheckboxColumn(width="small"),
-                 "Is Error": st.column_config.CheckboxColumn(width="small"),
-                 "Is Not Found": st.column_config.CheckboxColumn(width="small"),
-                 "Is Rate Limit": st.column_config.CheckboxColumn(width="small"),
+                 "Is Success": st.column_config.CheckboxColumn("Success?", width="small"),
+                 "Is Error": st.column_config.CheckboxColumn("Error?", width="small"),
+                 "Is Not Found": st.column_config.CheckboxColumn("Not Found?", width="small"),
+                 "Is Rate Limit": st.column_config.CheckboxColumn("Rate Limit?", width="small"),
                  "Latency (s)": st.column_config.NumberColumn(format="%.2f", width="small"),
-                 "Exact Match": st.column_config.CheckboxColumn(width="small"),
-                 "Case-Insensitive Match": st.column_config.CheckboxColumn(width="small"),
-                 "Raw Output": None, # Hide raw output by default
-                 "Parse Error": None # Hide parse error by default
+                 "Exact Match": st.column_config.CheckboxColumn("Exact?", width="small"),
+                 "Case-Insensitive Match": st.column_config.CheckboxColumn("Case-Ins?", width="small"),
+                 # Explicitly hide these if not in column_order
+                 "Raw Output": None,
+                 "Parse Error": None
             }
         )
 
@@ -670,14 +758,20 @@ else:
 
             st.subheader("Detailed Results")
             # Display the final results including ground truth and matches
+            # Ensure 'Source' is NOT included here
+            detailed_df = pd.DataFrame(st.session_state.evaluation_results)
+            # if 'Source' not in detailed_df.columns:
+            #     detailed_df['Source'] = 'Unknown' # Remove source handling
+
             st.dataframe(
-                pd.DataFrame(st.session_state.evaluation_results),
+                detailed_df,
                 use_container_width=True,
                 hide_index=True,
-                 column_config={ # Reuse column config for consistency
+                 column_config={ # Reuse column config for consistency, ensure Source is NOT visible
                      "Prompt Name": st.column_config.TextColumn(width="medium"),
                      "Extracted Value": st.column_config.TextColumn(width="medium"),
                      "Ground Truth": st.column_config.TextColumn(width="medium"),
+                     # "Source": st.column_config.TextColumn(width="small"), # Remove source
                      "Is Success": st.column_config.CheckboxColumn("Success?",width="small"),
                      "Is Error": st.column_config.CheckboxColumn("Error?", width="small"),
                      "Is Not Found": st.column_config.CheckboxColumn("Not Found?", width="small"),
