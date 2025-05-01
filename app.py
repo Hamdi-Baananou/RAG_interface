@@ -14,6 +14,40 @@ import json # Import the json library
 import pandas as pd # Add pandas import
 import re # Import the 're' module for regular expressions
 import asyncio # Add asyncio import
+import subprocess # To run playwright install
+
+# --- Install Playwright browsers needed by crawl4ai --- 
+# This should run on startup in the Streamlit Cloud environment
+def install_playwright_browsers():
+    logger.info("Checking and installing Playwright browsers if needed...")
+    try:
+        # Use subprocess to run the command
+        # stdout/stderr=subprocess.PIPE can capture output if needed
+        # check=True will raise an error if the command fails
+        process = subprocess.run([sys.executable, "-m", "playwright", "install"], 
+                                 capture_output=True, text=True, check=False) # Use check=False initially to see output
+        if process.returncode == 0:
+             logger.success("Playwright browsers installed successfully (or already exist).")
+        else:
+             # Log stdout/stderr for debugging if it failed
+             logger.error(f"Playwright browser install command failed with code {process.returncode}.")
+             logger.error(f"stdout: {process.stdout}")
+             logger.error(f"stderr: {process.stderr}")
+             # Optionally raise an error or show a Streamlit warning
+             # st.warning("Failed to install necessary Playwright browsers. Web scraping may fail.")
+        # Alternative using playwright's internal API (might be cleaner if stable)
+        # from playwright.driver import main as playwright_main
+        # playwright_main.main(['install']) # Installs default browser (chromium)
+        # logger.success("Playwright browsers installed successfully via internal API.")
+    except FileNotFoundError:
+        logger.error("Could not find 'playwright' command. Is playwright installed correctly?")
+        st.error("Playwright not found. Please ensure 'playwright' is in requirements.txt")
+    except Exception as e:
+        logger.error(f"An error occurred during Playwright browser installation: {e}", exc_info=True)
+        st.warning(f"An error occurred installing Playwright browsers: {e}. Web scraping may fail.")
+
+install_playwright_browsers() # Run the installation check on script start
+# ----------------------------------------------------
 
 # Import project modules
 import config
