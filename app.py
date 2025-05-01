@@ -190,6 +190,10 @@ with st.sidebar:
         key="pdf_uploader"
     )
 
+    # --- Add Part Number Input ---
+    st.text_input("Enter Part Number (Optional):", key="part_number_input", value=st.session_state.get("part_number_input", ""))
+    # ---------------------------
+
     process_button = st.button("Process Uploaded Documents", key="process_button", type="primary")
 
     if process_button and uploaded_files:
@@ -277,6 +281,10 @@ if not st.session_state.extraction_chain:
 else:
     # --- Block 1: Run Extraction (if needed) ---
     if st.session_state.extraction_chain and not st.session_state.extraction_performed:
+        # --- Get Part Number ---
+        part_number = st.session_state.get("part_number_input", "").strip()
+        # --------------------
+
         # Define the prompts (attribute keys and their instructions)
         prompts_to_run = {
             # Material Properties
@@ -333,7 +341,14 @@ else:
                 with st.spinner(f"Extracting {prompt_name}..."):
                     try:
                         start_time = time.time()
-                        json_result_str = run_extraction(prompt_text, attribute_key, st.session_state.extraction_chain)
+                        # --- Pass part_number to run_extraction ---
+                        json_result_str = run_extraction(
+                            prompt_text,
+                            attribute_key,
+                            st.session_state.extraction_chain,
+                            part_number # Pass the retrieved part number here
+                        )
+                        # -----------------------------------------
                         run_time = time.time() - start_time
                         logger.info(f"Extraction for '{prompt_name}' took {run_time:.2f} seconds.")
 

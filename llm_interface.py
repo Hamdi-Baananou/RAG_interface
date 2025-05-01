@@ -211,6 +211,9 @@ Analyze the context carefully and follow the reasoning steps precisely.
 Context:
 {context}
 
+Part Number Information (if provided by user):
+{part_number}
+
 Extraction Instructions:
 {extraction_instructions}
 
@@ -248,13 +251,16 @@ Output:
     extraction_chain = (
         RunnableParallel(
             # Retrieve context based on the attribute_key for better focus
-            {"context": RunnablePassthrough() | (lambda x: retriever.invoke(f"Extract information about {x['attribute_key']}")) | format_docs,
+            # Also pass part_number through
+            {"context": RunnablePassthrough() | (lambda x: retriever.invoke(f"Extract information about {x['attribute_key']} for part number {x.get('part_number', 'N/A')}")) | format_docs,
              "extraction_instructions": RunnablePassthrough(),
-             "attribute_key": RunnablePassthrough() }
+             "attribute_key": RunnablePassthrough(),
+             "part_number": RunnablePassthrough() } # Pass part_number through
         )
         # Assign the inputs correctly to the prompt variables
         .assign(extraction_instructions=lambda x: x['extraction_instructions']['extraction_instructions'],
-                attribute_key=lambda x: x['attribute_key']['attribute_key'])
+                attribute_key=lambda x: x['attribute_key']['attribute_key'],
+                part_number=lambda x: x['part_number'].get('part_number', "Not Provided")) # Extract part_number safely
         | prompt
         | llm
         | StrOutputParser()
@@ -264,9 +270,10 @@ Output:
     return extraction_chain
 
 @logger.catch(reraise=True)
-def run_extraction(extraction_instructions: str, attribute_key: str, extraction_chain):
+def run_extraction(extraction_instructions: str, attribute_key: str, extraction_chain, part_number: str):
     """
     Runs a specific extraction prompt/instructions through the JSON extraction RAG chain.
+    Includes the user-provided part number in the input.
     (This is the version from before batching was introduced)
     """
     if not extraction_chain:
@@ -280,8 +287,13 @@ def run_extraction(extraction_instructions: str, attribute_key: str, extraction_
         return '{"error": "No attribute key provided."}'
 
     try:
-        logger.info(f"Invoking extraction chain for key: '{attribute_key}'")
-        input_data = {"extraction_instructions": extraction_instructions, "attribute_key": attribute_key}
+        logger.info(f"Invoking extraction chain for key: '{attribute_key}' with Part Number: '{part_number if part_number else 'None'}'")
+        # Include part_number in the input data dictionary
+        input_data = {
+            "extraction_instructions": extraction_instructions,
+            "attribute_key": attribute_key,
+            "part_number": part_number if part_number else "Not Provided" # Ensure it's always a string
+        }
         response = extraction_chain.invoke(input_data)
         logger.info("Extraction chain invoked successfully.")
         # Clean potential markdown ```json ... ``` tags
