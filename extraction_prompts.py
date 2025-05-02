@@ -942,55 +942,7 @@ Determine sealing status using this reasoning chain:
 """
 
 SEALING_CLASS_PROMPT = """
-Determine Sealing Class (IP Code) using this reasoning chain:
-
-    STEP 1: EXPLICIT IP CODE EXTRACTION
-    - Scan for ISO 20653 codes:
-      ✓ Valid formats: IPx0, IPx4, IPx4K, IPx5, IPx6, IPx6K, IPx7, IPx8, IPx9, IPx9K
-      ✗ Reject invalid codes: IPx1, IPx2, IPx3
-    - For multiple codes:
-      → Select highest protection level (e.g., IPx9K > IPx7)
-
-    STEP 2: CLASS S INFERENCE
-    - If no explicit IP codes:
-      ✓ Check for S-class mentions:
-        * \"Class S1\" → IPx0
-        * \"Class S2\" → IPx7
-        * \"Class S3\" → IPx9K
-      ✓ Map functional descriptions:
-        * \"Unsealed\"/\"No environmental protection\" → IPx0
-        * \"Sealed\"/\"Waterproof\" → IPx7
-        * \"High-pressure resistant\"/\"Washdown-rated\" → IPx9K
-
-    STEP 3: DOCUMENT HIERARCHY VALIDATION
-    - For conflicts:
-      1. Engineering specs > Marketing materials
-      2. Latest revision > Older versions
-      3. Explicit IP codes > S-class inferences
-
-    STEP 4: FINAL DEFAULT
-    - If no data after Steps 1-3:
-      → Return IPx0 (per Class S1 default)
-
-    Examples:
-    \"IPx6K certified per ISO 20653\"
-    → REASONING: [Step1] Explicit code → IPx6K
-    → SEALING CLASS: IPx6K
-
-    \"Class S2 connector for marine environments\"
-    → REASONING: [Step2] S2 → IPx7
-    → SEALING CLASS: IPx7
-
-    \"Unsealed housing with no IP rating\"
-    → REASONING: [Step2] \"Unsealed\" → IPx0
-    → SEALING CLASS: IPx0
-
-    \"General-purpose automotive connector\"
-    → REASONING: [Step4] No data → Default IPx0
-    → SEALING CLASS: IPx0
-
-    Output format:
-    SEALING CLASS: [IPx0/IPx4/IPx4K/IPx5/IPx6/IPx6K/IPx7/IPx8/IPx9/IPx9K]
+According to their qualification for usage under different environmental conditions, systems are divided in corresponding protection classes, so-called IP-codes. The abbreviation IP means “International Protection” according DIN; in the English-speaking countries, the classes are called “Ingress Protection”.
 """
 
 # --- Terminals & Connections ---
@@ -1421,3 +1373,4 @@ Determine HV qualification using this reasoning chain:
     Output format:
     HV QUALIFIED: [Yes/No]
 """
+
