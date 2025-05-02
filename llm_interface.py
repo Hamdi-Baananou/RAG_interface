@@ -514,6 +514,12 @@ async def run_extraction(extraction_instructions: str, attribute_key: str, extra
             "scraped_table_html": scraped_table_html if scraped_table_html else "Not Available" # Pass HTML or placeholder
         }
 
+        # --- TEMPORARY DEBUG LOG --- 
+        logger.debug(f"\n--- Debug: Cleaned Scraped Data for Prompt ---\
+{input_data['scraped_table_html']}\
+--- End Debug ---")
+        # -------------------------
+
         # Use ainvoke for the async chain
         response = await extraction_chain.ainvoke(input_data)
         logger.info(f"Extraction chain invoked successfully for '{attribute_key}'.")
