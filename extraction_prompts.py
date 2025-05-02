@@ -455,67 +455,8 @@ Determine cavity count using this reasoning chain:
 """
 
 NUMBER_OF_ROWS_PROMPT = """
-Determine the number of rows using this reasoning chain:
-
-    STEP 1: HOUSING GEOMETRY CHECK
-    - Identify housing shape:
-      ✓ Square/rectangular: Proceed
-      ✗ Round/triangular/irregular: → 0
-    - Validate via:
-      ✓ Explicit labels (\"rectangular housing\")
-      ✓ Diagram annotations (X > Y dimensions)
-
-    STEP 2: CAVITY UNIFORMITY VERIFICATION
-    - Check for:
-      ✓ Identical cavity sizes in all positions
-      ✗ Mixed dimensions (e.g., \"Pos1: 2.8mm, Pos2: 3.5mm\")
-    - Reject if:
-      * \"Dual-size cavities\"
-      * \"Mixed terminal types\"
-
-    STEP 3: ROW IDENTIFICATION
-    - Scan for:
-      ✓ Explicit terms: \"ROW\", \"POSN\", \"WAY\" (e.g., \"2-ROW\", \"3-POSN\")
-      ✓ Title block labels: \"ROWS: 2\"
-      ✓ Part numbers: \"-2R\" suffix
-    - Map terms to numbers:
-      * \"1-WAY\" → 1
-      * \"DUAL ROWS\" → 2
-
-    STEP 4: DIRECTIONAL VALIDATION
-    - Confirm rows align with the **longer side (X-axis)**:
-      ✓ Horizontal cavity alignment
-      ✗ Diagonal/vertical arrangements → 0
-
-    STEP 5: CONFLICT RESOLUTION
-    - For conflicting values:
-      1. Prioritize by document date (newest first)
-      2. Engineering drawings > Marketing materials
-      3. Physical labels > Text descriptions
-
-    STEP 6: FINAL QUALIFICATION
-    - Return 0 if:
-      ✓ Single cavity
-      ✓ Non-rectangular shape
-      ✓ Mixed cavity sizes
-      ✓ Non-horizontal rows
-    - Else return validated integer
-
-    Examples:
-    \"Rectangular housing, 3-ROW (Cavities: 2.8mm uniform)\"
-    → REASONING: [Step1] Rect ✓ → [Step2] Uniform ✓ → [Step3] Explicit 3 → Valid
-    → NUMBER OF ROWS: 3
-
-    \"Dual-POSN connector (round housing)\"
-    → REASONING: [Step1] Round ✗ → Auto reject
-    → NUMBER OF ROWS: 0
-
-    \"2023 Spec: 2-ROW | 2025 Spec: 4-POSN\"
-    → REASONING: [Step5] Newer doc → [Step3] 4-POSN=4 → Valid
-    → NUMBER OF ROWS: 4
-
-    Output format:
-    NUMBER OF ROWS: [integer/0]
+Determine the number of rows 
+    
 """
 
 MECHANICAL_CODING_PROMPT = """

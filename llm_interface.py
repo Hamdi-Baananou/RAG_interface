@@ -428,8 +428,8 @@ Part Number Information (if provided by user):
 [Scraped Website Data]
 {scraped_table_html}
 
-
-
+[PDF Document Data]
+{context}
 --- End Context ---
 
 Extraction Instructions:
