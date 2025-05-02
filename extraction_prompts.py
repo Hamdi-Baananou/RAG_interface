@@ -883,7 +883,7 @@ Determine sealing status using this reasoning chain:
 """
 
 SEALING_CLASS_PROMPT = """
-According to their qualification for usage under different environmental conditions, systems are divided in corresponding protection classes, so-called IP-codes. The abbreviation IP means “International Protection” according DIN; in the English-speaking countries, the classes are called “Ingress Protection”.
+According to their qualification for usage under different environmental conditions, systems are divided in corresponding protection classes, so-called IP-codes. The abbreviation IP means "International Protection" according DIN; in the English-speaking countries, the classes are called "Ingress Protection".
 """
 
 # --- Terminals & Connections ---
@@ -1111,7 +1111,7 @@ Determine pre-assembly status using this reasoning chain:
     STEP 3: COMPONENT VS FULL ASSEMBLY
     - Differentiate:
       ✓ Full connector assembly → Check for disassembly mandates
-      ✓ Individual components → Check if they’re add-ons requiring removal
+      ✓ Individual components → Check if they're add-ons requiring removal
 
     STEP 4: EXPLICIT STATEMENT PRIORITIZATION
     - Hierarchy of evidence:

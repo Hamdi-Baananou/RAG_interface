@@ -403,7 +403,7 @@ async def scrape_website_table_html(part_number: str) -> Optional[str]:
     return None
 
 
-# --- Extraction Chain (Revised Prompt Template - MINOR CHANGE) ---
+# --- Unified Extraction Chain (Combined Context) ---
 def create_extraction_chain(retriever, llm):
     """
     Creates a RAG chain that uses both PDF context and potentially cleaned scraped web table data
@@ -413,7 +413,8 @@ def create_extraction_chain(retriever, llm):
         logger.error("Retriever or LLM is not initialized for extraction chain.")
         return None
 
-    # --- Updated Template with combined context, no explicit prioritization ---
+    # Template with combined context, no explicit prioritization
+    # Uses detailed instructions passed in at runtime
     template = """
 You are an expert data extractor. Your goal is to extract a specific piece of information based on the Extraction Instructions provided below.
 Use the provided context below, which may contain data scraped from a website and/or text extracted from PDF documents.
@@ -423,7 +424,6 @@ Part Number Information (if provided by user):
 
 --- Context ---
 # Conditionally include Website Data if available (Handled by logic providing the value)
-# The lambda function for scraped_table_html already provides "Not Available" if it's None.
 
 [Scraped Website Data]
 {scraped_table_html}
@@ -439,7 +439,7 @@ Extraction Instructions:
 IMPORTANT: Respond with ONLY a single, valid JSON object containing exactly one key-value pair.
 - The key for the JSON object MUST be the string: "{attribute_key}"
 - The value MUST be the extracted result determined by following the Extraction Instructions using the combined context provided above.
-- Provide the value as a JSON string. Examples of possible values include "GF, T", "none", "NOT FOUND", "Female", "7.2", "999".
+- Provide the value as a JSON string. Examples: "GF, T", "none", "NOT FOUND", "Female", "7.2", "999".
 - If the information cannot be found in the provided context based on the instructions, the value should be "NOT FOUND".
 - Do NOT include any explanations, reasoning, or any text outside of the single JSON object in your response.
 
@@ -450,20 +450,14 @@ Output:
 """
     prompt = PromptTemplate.from_template(template)
 
-    # Define the extraction chain using LCEL
-    # Takes 'extraction_instructions', 'attribute_key', 'part_number', and 'scraped_table_html' as input
     extraction_chain = (
         RunnableParallel(
-            # Retrieve PDF context based on the attribute_key and part_number
-            context=RunnablePassthrough() | (lambda x: retriever.invoke(f"Extract information about {x['attribute_key']} for part number {x.get('part_number', 'N/A')}")) | format_docs,
-            # Pass through other inputs directly
+            context=RunnablePassthrough() | (lambda x: retriever.invoke(f"Extract information about {x['attribute_key']} for part number {x.get('part_number', 'N/A')}") ) | format_docs,
             extraction_instructions=RunnablePassthrough(),
             attribute_key=RunnablePassthrough(),
             part_number=RunnablePassthrough(),
             scraped_table_html=RunnablePassthrough() # Pass the cleaned text
         )
-        # Assign the inputs correctly to the prompt variables
-        # Ensure all inputs exist in the dictionary passed to assign
         .assign(
             extraction_instructions=lambda x: x['extraction_instructions']['extraction_instructions'],
             attribute_key=lambda x: x['attribute_key']['attribute_key'],
@@ -475,16 +469,52 @@ Output:
         | StrOutputParser()
     )
 
-    logger.info("Extraction RAG chain (with web scrape priority) created successfully.")
+    logger.info("Unified Extraction RAG chain created successfully.")
     return extraction_chain
 
+# --- Helper function to invoke chain and process response ---
+async def _invoke_chain_and_process(chain, input_data, attribute_key):
+    """Helper to invoke chain, handle errors, and clean response."""
+    response = await chain.ainvoke(input_data)
+    logger.info(f"Chain invoked successfully for '{attribute_key}'.")
 
-# --- Simplified run_extraction (Calls the updated chain) ---
+    if response is None:
+         logger.error(f"Chain invocation returned None for '{attribute_key}'")
+         # Return error JSON
+         return json.dumps({"error": f"Chain invocation returned None for {attribute_key}"})
+
+    # Clean response (<think>, ```json)
+    cleaned_response = response
+    think_start_tag = "<think>"
+    think_end_tag = "</think>"
+    start_index = cleaned_response.find(think_start_tag)
+    end_index = cleaned_response.find(think_end_tag)
+    if start_index != -1 and end_index != -1 and end_index > start_index:
+         cleaned_response = cleaned_response[end_index + len(think_end_tag):].strip()
+
+    if cleaned_response.strip().startswith("```json"):
+        cleaned_response = cleaned_response.strip()[7:]
+        if cleaned_response.endswith("```"):
+            cleaned_response = cleaned_response[:-3]
+    cleaned_response = cleaned_response.strip()
+
+    # Return the potentially valid JSON string (or invalid string if LLM failed)
+    # Validation happens in the caller
+    return cleaned_response
+
+
+# --- Updated run_extraction (Single Chain + Conditional Fallback) ---
 @logger.catch(reraise=True)
-async def run_extraction(extraction_instructions: str, attribute_key: str, extraction_chain, part_number: str, scraped_table_html: Optional[str]):
+async def run_extraction(
+    extraction_instructions: str, # Detailed PDF instructions
+    attribute_key: str,
+    extraction_chain, # The single, unified chain
+    part_number: str,
+    cleaned_web_text: Optional[str]
+):
     """
-    Runs the extraction RAG chain, providing both PDF context (via retriever in chain)
-    and potentially pre-scraped web table HTML. The chain's prompt prioritizes the HTML.
+    Runs the unified extraction chain. If the result is NOT FOUND and web text was provided,
+    it attempts a fallback call using only PDF context.
     """
     if not attribute_key:
         logger.warning("Received empty attribute key.")
@@ -494,74 +524,111 @@ async def run_extraction(extraction_instructions: str, attribute_key: str, extra
         return '{"error": "Extraction chain is not initialized."}'
     if not extraction_instructions:
         logger.warning(f"Received empty extraction instructions for '{attribute_key}'. LLM might struggle.")
-        # Proceed, but the LLM might return "NOT FOUND" or hallucinate without instructions.
+        # Use attribute key as basic instruction if primary one is missing
+        extraction_instructions = f"Extract the value for {attribute_key}"
+
+
+    final_json_string = None
+    raw_llm_output_for_error = None # Store original raw output in case of fallback error
 
     try:
-        log_msg = f"Invoking extraction chain for key: '{attribute_key}' with Part Number: '{part_number if part_number else 'None'}'"
-        if scraped_table_html:
-             log_msg += " (using scraped web HTML)."
+        # --- First Attempt (Combined Context if web text available) ---
+        log_msg = f"Invoking extraction chain (Attempt 1) for key: '{attribute_key}'"
+        log_msg += f" with Part Number: '{part_number if part_number else 'None'}'"
+        initial_web_text = cleaned_web_text if cleaned_web_text else "Not Available"
+        if cleaned_web_text:
+             log_msg += " (using scraped web text + PDF context)."
         else:
-             log_msg += " (no scraped web HTML available, using PDF context)."
+             log_msg += " (no scraped web text, using PDF context only)."
         logger.info(log_msg)
 
-        # Prepare input data for the chain
-        input_data = {
+        input_data_1 = {
             "extraction_instructions": extraction_instructions,
             "attribute_key": attribute_key,
             "part_number": part_number if part_number else "Not Provided",
-            "scraped_table_html": scraped_table_html if scraped_table_html else "Not Available" # Pass HTML or placeholder
+            "scraped_table_html": initial_web_text
         }
 
         # --- TEMPORARY DEBUG LOG --- 
-        logger.debug(f"\n--- Debug: Cleaned Scraped Data for Prompt ---\
-{input_data['scraped_table_html']}\
---- End Debug ---")
+        logger.debug(f"\n--- Debug (Attempt 1): Cleaned Scraped Data for Prompt ---\n{input_data_1['scraped_table_html']}\n--- End Debug ---")
         # -------------------------
 
-        # Use ainvoke for the async chain
-        response = await extraction_chain.ainvoke(input_data)
-        logger.info(f"Extraction chain invoked successfully for '{attribute_key}'.")
+        # Use helper to invoke and clean
+        first_response_str = await _invoke_chain_and_process(extraction_chain, input_data_1, attribute_key)
+        raw_llm_output_for_error = first_response_str # Store this in case needed for error reporting later
 
-        # --- Post-processing LLM response (same as before) ---
-        cleaned_response = response
-        think_start_tag = "<think>"
-        think_end_tag = "</think>"
-        start_index = cleaned_response.find(think_start_tag)
-        end_index = cleaned_response.find(think_end_tag)
-        if start_index != -1 and end_index != -1 and end_index > start_index:
-             cleaned_response = cleaned_response[end_index + len(think_end_tag):].strip()
-
-        if cleaned_response.strip().startswith("```json"):
-            cleaned_response = cleaned_response.strip()[7:]
-            if cleaned_response.endswith("```"):
-                cleaned_response = cleaned_response[:-3]
-        cleaned_response = cleaned_response.strip()
-
-        # Attempt to validate/load JSON before returning
+        # --- Check if Fallback Needed --- 
+        parsed_value = None
+        is_not_found = False
         try:
-             # Basic validation: does it start with { and end with }?
-             if not (cleaned_response.startswith('{') and cleaned_response.endswith('}')):
-                  raise json.JSONDecodeError("Does not look like a JSON object.", cleaned_response, 0)
-             # Try full parse
-             json.loads(cleaned_response)
-             return cleaned_response
-        except json.JSONDecodeError as json_err:
-             logger.error(f"LLM for '{attribute_key}' returned invalid JSON after cleaning: {json_err}. Response: '{cleaned_response}' Raw: '{response}'")
-             # Return error JSON including the raw response for debugging in the UI
-             err_payload = {"error": f"LLM returned invalid JSON: {json_err}", "raw_llm_output": response}
-             return json.dumps(err_payload) # Ensure the error itself is valid JSON
+            # Attempt to parse the first response
+            parsed_json = json.loads(first_response_str)
+            if isinstance(parsed_json, dict) and attribute_key in parsed_json:
+                 parsed_value = str(parsed_json[attribute_key])
+                 # Treat variations of not found consistently
+                 is_not_found = "not found" in parsed_value.lower() or parsed_value.strip() == ""
+            # Handle potential {"error": ...} responses from the helper
+            elif isinstance(parsed_json, dict) and "error" in parsed_json:
+                 logger.warning(f"First attempt for '{attribute_key}' resulted in error JSON: {parsed_json['error']}")
+                 # Don't fallback if the first attempt already hit an error (like rate limit)
+                 final_json_string = first_response_str # Return the error JSON
+        except json.JSONDecodeError:
+            # If the first response wasn't valid JSON, don't fallback, return the error
+            logger.error(f"First attempt for '{attribute_key}' did not return valid JSON: '{first_response_str}'")
+            final_json_string = json.dumps({"error": f"LLM returned invalid JSON", "raw_llm_output": first_response_str})
+
+
+        # --- Conditional Fallback Attempt (PDF Context Only) --- 
+        # Only fallback if first attempt returned "NOT FOUND" AND we actually used web text initially
+        if final_json_string is None and is_not_found and cleaned_web_text:
+            logger.info(f"First attempt resulted in 'NOT FOUND' for '{attribute_key}' with web data present. Trying PDF-only fallback.")
+
+            input_data_2 = {
+                "extraction_instructions": extraction_instructions, # Use same detailed instructions
+                "attribute_key": attribute_key,
+                "part_number": part_number if part_number else "Not Provided",
+                "scraped_table_html": "Not Available" # Force PDF-only context
+            }
+
+            # Invoke again using the helper
+            second_response_str = await _invoke_chain_and_process(extraction_chain, input_data_2, f"{attribute_key} (PDF Fallback)")
+            final_json_string = second_response_str # Use the fallback result
+
+        elif final_json_string is None:
+             # Use the result from the first attempt if no fallback was needed or possible
+             final_json_string = first_response_str
+
+        # --- Final Validation (Mostly for Fallback case) --- 
+        try:
+            # Ensure the final result is valid JSON before returning
+             # Allow empty string in value, but structure must be dict
+             if not final_json_string or not final_json_string.strip().startswith('{'):
+                 raise json.JSONDecodeError("Does not look like JSON", final_json_string or "", 0)
+             
+             parsed_final = json.loads(final_json_string) # Try full parse
+             if not isinstance(parsed_final, dict):
+                 raise TypeError("Final result is not a JSON object")
+                 
+             return final_json_string # Return the valid JSON string
+             
+        except (json.JSONDecodeError, TypeError) as json_err:
+             logger.error(f"LLM for '{attribute_key}' (potentially after fallback) returned invalid JSON: {json_err}. Final String: '{final_json_string}'")
+             # Include the raw output from the *first* attempt if the final string is bad, might give clues
+             err_payload = {"error": f"LLM returned invalid JSON: {json_err}", "raw_llm_output": raw_llm_output_for_error or final_json_string}
+             return json.dumps(err_payload)
+
 
     except Exception as e:
+        # Catch errors during the chain selection/invocation logic itself
         error_str = str(e).lower()
         if "rate limit" in error_str or "too many requests" in error_str or "429" in error_str:
-             logger.error(f"Rate limit hit during LLM extraction for '{attribute_key}': {e}", exc_info=False)
-             return json.dumps({"error": f"API Rate Limit Hit for {attribute_key}"}) # Valid JSON error
+             logger.error(f"Rate limit hit during LLM extraction process for '{attribute_key}': {e}", exc_info=False)
+             return json.dumps({"error": f"API Rate Limit Hit for {attribute_key}"})
         else:
-             logger.error(f"Error invoking LLM extraction chain for '{attribute_key}': {e}", exc_info=True)
-             return json.dumps({"error": f"An error occurred during LLM extraction: {str(e)}"}) # Valid JSON error
+             logger.error(f"Error during extraction process for '{attribute_key}': {e}", exc_info=True)
+             return json.dumps({"error": f"An error occurred during extraction: {str(e)}"})
 
 
-# --- Remove old scraping function and placeholders ---
-# async def scrape_website_for_attribute(attribute_key: str, part_number: str) -> Optional[str]: ...
-# TARGET_URLS = [ ... ]
-# ATTRIBUTE_SELECTORS = { ... }
+# Remove placeholder functions if they exist
+# def create_pdf_extraction_chain(...): ...
+# def create_web_extraction_chain(...): ...

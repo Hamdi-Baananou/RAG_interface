@@ -60,8 +60,8 @@ from vector_store import (
 # Updated imports from llm_interface
 from llm_interface import (
     initialize_llm,
-    create_extraction_chain, # Revert back to this
-    run_extraction,         # Revert back to this
+    create_extraction_chain, # Use the single unified chain function
+    run_extraction,
     scrape_website_table_html
 )
 # Import the prompts
@@ -117,6 +117,12 @@ st.set_page_config(
 # Use Streamlit's session state to hold persistent data across reruns
 if 'retriever' not in st.session_state:
     st.session_state.retriever = None
+# Remove separate chain states if they exist
+# if 'pdf_chain' not in st.session_state:
+#     st.session_state.pdf_chain = None
+# if 'web_chain' not in st.session_state:
+#     st.session_state.web_chain = None
+# Use a single state for the unified chain
 if 'extraction_chain' not in st.session_state:
     st.session_state.extraction_chain = None
 if 'processed_files' not in st.session_state:
@@ -200,11 +206,16 @@ if st.session_state.retriever is None and config.CHROMA_SETTINGS.is_persistent a
     if st.session_state.retriever:
         logger.success("Successfully loaded retriever from persistent storage.")
         st.session_state.processed_files = ["Existing data loaded from disk"]
-        # Create SINGLE extraction chain
+        # --- Create SINGLE Unified Extraction Chain --- 
         logger.info("Creating extraction chain from loaded retriever...")
-        st.session_state.extraction_chain = create_extraction_chain(st.session_state.retriever, llm) # Use single chain function
+        # Use the single unified chain creation function
+        st.session_state.extraction_chain = create_extraction_chain(st.session_state.retriever, llm)
+        # Remove creation of separate chains
+        # st.session_state.pdf_chain = create_pdf_extraction_chain(st.session_state.retriever, llm)
+        # st.session_state.web_chain = create_web_extraction_chain(llm)
         if not st.session_state.extraction_chain:
             st.warning("Failed to create extraction chain from loaded retriever.")
+        # -----------------------------------------
         # Don't reset evaluation if loading existing data, but ensure extraction hasn't run yet
         st.session_state.extraction_performed = False # Ensure flag is false on load
         pass # Don't reset evaluation results when loading
@@ -276,9 +287,13 @@ with st.sidebar:
                         if st.session_state.retriever:
                             st.session_state.processed_files = filenames # Update list
                             logger.success("Vector store setup complete. Retriever is ready.")
-                            # --- Create SINGLE Extraction Chain ---
+                            # --- Create SINGLE Unified Extraction Chain --- 
                             with st.spinner("Preparing extraction engine..."):
+                                 # Use the single unified chain creation function
                                  st.session_state.extraction_chain = create_extraction_chain(st.session_state.retriever, llm)
+                                 # Remove creation of separate chains
+                                 # st.session_state.pdf_chain = create_pdf_extraction_chain(st.session_state.retriever, llm)
+                                 # st.session_state.web_chain = create_web_extraction_chain(llm)
                             if st.session_state.extraction_chain:
                                 logger.success("Extraction chain created.")
                                 # Keep extraction_performed as False here, it will run in the main section
@@ -302,7 +317,7 @@ with st.sidebar:
 
     # --- Display processed files status (Simplified) ---
     st.subheader("Processing Status")
-    if st.session_state.extraction_chain and st.session_state.processed_files: # Check if ready for extraction results
+    if st.session_state.extraction_chain and st.session_state.processed_files: # Check if the single chain is ready
         st.success(f"Ready. Processed: {', '.join(st.session_state.processed_files)}")
     elif persistence_enabled and st.session_state.retriever and not st.session_state.extraction_chain:
          st.warning("Loaded existing data, but failed to create extraction chain.")
@@ -421,8 +436,7 @@ else:
 
 
         # --- Block 1b: Run Extraction Loop --- 
-        # (Moved loop handling outside, loop defined earlier)
-        st.info(f"Running {len(prompts_to_run)} extraction prompts...") # Updated message
+        st.info(f"Running {len(prompts_to_run)} extraction prompts...")
 
         for prompt_name, prompt_text in prompts_to_run.items():
             current_col = cols[col_index % 2]
@@ -440,12 +454,14 @@ else:
                     try:
                         start_time = time.time()
                         # --- Call the async run_extraction using the loop --- 
-                        # Pass the potentially scraped HTML to the function
+                        # Pass the single unified chain and detailed pdf_instruction
                         json_result_str = loop.run_until_complete(run_extraction(
-                            prompt_text,
+                            prompt_text, # Pass the detailed PDF instruction here
                             attribute_key,
-                            st.session_state.extraction_chain,
-                            part_number, # Pass the retrieved part number here
+                            st.session_state.extraction_chain, # Pass the single unified chain
+                            # st.session_state.web_chain, # Remove separate chains
+                            # st.session_state.pdf_chain,
+                            part_number,
                             scraped_table_html # Pass the scraped HTML (or None)
                         ))
                         # ---------------------------------------------------------
