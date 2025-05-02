@@ -407,31 +407,30 @@ async def scrape_website_table_html(part_number: str) -> Optional[str]:
 def create_extraction_chain(retriever, llm):
     """
     Creates a RAG chain that uses both PDF context and potentially cleaned scraped web table data
-    to answer an extraction instruction, prioritizing the scraped data.
+    to answer an extraction instruction.
     """
     if retriever is None or llm is None:
         logger.error("Retriever or LLM is not initialized for extraction chain.")
         return None
 
-    # --- Updated Template to reflect cleaned data ---
+    # --- Updated Template with combined context, no explicit prioritization ---
     template = """
 You are an expert data extractor. Your goal is to extract a specific piece of information based on the Extraction Instructions provided below.
-You are given two potential sources of information:
-1. Cleaned Scraped Website Data: This is cleaned text extracted from a specific section (likely features/specifications) of a supplier website for the part number. THIS SOURCE IS PREFERRED AND SHOULD BE USED IF THE INFORMATION IS PRESENT AND CLEAR.
-2. Document Context: These are text chunks extracted from PDF documents related to the part number. Use this as a fallback if the Cleaned Scraped Website Data is missing, doesn't contain the required information, or is ambiguous.
+Use the provided context below, which may contain data scraped from a website and/or text extracted from PDF documents.
 
 Part Number Information (if provided by user):
 {part_number}
 
---- PREFERRED SOURCE ---
-Cleaned Scraped Website Data:
-{scraped_table_html} 
---- END PREFERRED SOURCE ---
+--- Context ---
+# Conditionally include Website Data if available (Handled by logic providing the value)
+# The lambda function for scraped_table_html already provides "Not Available" if it's None.
 
---- FALLBACK SOURCE ---
-Document Context (from PDFs):
+[Scraped Website Data]
+{scraped_table_html}
+
+[PDF Document Data]
 {context}
---- END FALLBACK SOURCE ---
+--- End Context ---
 
 Extraction Instructions:
 {extraction_instructions}
@@ -439,13 +438,13 @@ Extraction Instructions:
 ---
 IMPORTANT: Respond with ONLY a single, valid JSON object containing exactly one key-value pair.
 - The key for the JSON object MUST be the string: "{attribute_key}"
-- The value MUST be the extracted result determined by following the Extraction Instructions, prioritizing the 'Cleaned Scraped Website Data' if available and relevant.
+- The value MUST be the extracted result determined by following the Extraction Instructions using the combined context provided above.
 - Provide the value as a JSON string. Examples of possible values include "GF, T", "none", "NOT FOUND", "Female", "7.2", "999".
-- If the information cannot be found in EITHER the Cleaned Scraped Website Data OR the Document Context based on the instructions, the value should be "NOT FOUND".
+- If the information cannot be found in the provided context based on the instructions, the value should be "NOT FOUND".
 - Do NOT include any explanations, reasoning, or any text outside of the single JSON object in your response.
 
 Example Output Format:
-{{"{attribute_key}": "extracted_value_from_web_or_pdf"}}
+{{"{attribute_key}": "extracted_value_from_context"}}
 
 Output:
 """
@@ -453,7 +452,6 @@ Output:
 
     # Define the extraction chain using LCEL
     # Takes 'extraction_instructions', 'attribute_key', 'part_number', and 'scraped_table_html' as input
-    # Note: 'scraped_table_html' placeholder now holds the CLEANED TEXT
     extraction_chain = (
         RunnableParallel(
             # Retrieve PDF context based on the attribute_key and part_number
