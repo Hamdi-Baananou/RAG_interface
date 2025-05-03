@@ -472,10 +472,9 @@ def create_web_extraction_chain(llm):
         logger.error("LLM is not initialized for Web extraction chain.")
         return None
 
-    # Simple, strict template using only cleaned web data
+    # Revised simple, strict template using only cleaned web data
     template = """
-You are a precise data extractor. Look ONLY at the Cleaned Scraped Website Data provided below.
-Find the exact key matching the 'Attribute to Extract'.
+You are an expert data extractor. Your task is to find the value for the requested 'Attribute to Extract' using ONLY the 'Cleaned Scraped Website Data' provided below. Understand the meaning of the attribute requested.
 
 --- Cleaned Scraped Website Data ---
 {cleaned_web_data}
@@ -486,24 +485,24 @@ Attribute to Extract: {attribute_key}
 ---
 IMPORTANT: Respond with ONLY a single, valid JSON object containing exactly one key-value pair.
 - The key for the JSON object MUST be the string: "{attribute_key}"
-- The value MUST be the corresponding value found *exactly* next to the matching key in the Cleaned Scraped Website Data.
+- The value MUST be the corresponding value for the requested attribute found within the Cleaned Scraped Website Data. Use the text provided.
 - Provide the value as a JSON string.
-- If the exact attribute key is NOT found in the data, or if its value is empty or ambiguous, the value MUST be "NOT FOUND".
-- Do NOT guess, infer, or use information not explicitly present for the given key.
+- If the information related to the requested attribute is NOT found or is ambiguous within the provided data, the value MUST be "NOT FOUND".
+- Do NOT guess, infer, or use information outside the Cleaned Scraped Website Data.
 - Do NOT include any explanations or reasoning.
 
 Example Input Data:
 Connector Shape: Circular
-Number of Positions: 1
+Primary Product Color: Black
 Sealable: Yes
 
 Example 1:
 Attribute to Extract: Number of Positions
-Output: {{"Number of Positions": "1"}}
+Output: {{"Number of Positions": "NOT FOUND"}}
 
 Example 2:
 Attribute to Extract: Colour
-Output: {{"Colour": "NOT FOUND"}}
+Output: {{"Colour": "Black"}}
 
 Output:
 """
