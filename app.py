@@ -422,6 +422,9 @@ else:
                   st.session_state.current_part_number_scraped = None
         # --- End Block 1a ---
 
+        # --- Log the result of scraping before Stage 1 --- 
+        logger.debug(f"Cleaned Scraped HTML content passed to Stage 1: {scraped_table_html[:500] if scraped_table_html else 'None'}...")
+        # -------------------------------------------------
 
         # --- Block 1b: Two-Stage Extraction Logic --- 
         st.info(f"Running Stage 1 (Web Data Extraction) for {len(prompts_to_run)} attributes...")
@@ -451,6 +454,9 @@ else:
                                 "cleaned_web_data": scraped_table_html,
                                 "attribute_key": attribute_key
                             }
+                            # --- Log the input to the web chain --- 
+                            logger.debug(f"Invoking web_chain for '{attribute_key}' with input keys: {list(web_input.keys())}")
+                            # -------------------------------------
                             # Call helper using the web_chain
                             json_result_str = loop.run_until_complete(
                                 _invoke_chain_and_process(st.session_state.web_chain, web_input, f"{attribute_key} (Web)")
@@ -462,6 +468,10 @@ else:
                              logger.error(f"Error during Stage 1 (Web) call for '{attribute_key}': {e}", exc_info=True)
                              json_result_str = f'{{"error": "Exception during Stage 1 call: {e}"}}'
                              run_time = time.time() - start_time # Record time even on error
+                
+                # --- Log the raw output from the web chain ---
+                logger.debug(f"Raw JSON result string from web_chain for '{attribute_key}': {json_result_str}")
+                # -----------------------------------------
                 
                 # --- Basic Parsing of Stage 1 Result --- 
                 final_answer_value = "Error"
