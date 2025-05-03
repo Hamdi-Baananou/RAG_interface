@@ -472,9 +472,9 @@ def create_web_extraction_chain(llm):
         logger.error("LLM is not initialized for Web extraction chain.")
         return None
 
-    # Revised simple, strict template using only cleaned web data
+    # Simplified template using only cleaned web data
     template = """
-You are an expert data extractor. Your task is to find the value for the requested 'Attribute to Extract' using ONLY the 'Cleaned Scraped Website Data' provided below. Understand the meaning of the attribute requested.
+You are an expert data extractor. Your task is to find the value for the requested 'Attribute to Extract' using ONLY the 'Cleaned Scraped Website Data' provided below.
 
 --- Cleaned Scraped Website Data ---
 {cleaned_web_data}
@@ -489,20 +489,7 @@ IMPORTANT: Respond with ONLY a single, valid JSON object containing exactly one 
 - Provide the value as a JSON string.
 - If the information related to the requested attribute is NOT found or is ambiguous within the provided data, the value MUST be "NOT FOUND".
 - Do NOT guess, infer, or use information outside the Cleaned Scraped Website Data.
-- Do NOT include any explanations or reasoning.
-
-Example Input Data:
-Connector Shape: Circular
-Primary Product Color: Black
-Sealable: Yes
-
-Example 1:
-Attribute to Extract: Number of Positions
-Output: {{"Number of Positions": "NOT FOUND"}}
-
-Example 2:
-Attribute to Extract: Colour
-Output: {{"Colour": "Black"}}
+- Do NOT include any explanations or reasoning outside the JSON object.
 
 Output:
 """
