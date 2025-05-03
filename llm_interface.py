@@ -472,40 +472,50 @@ def create_web_extraction_chain(llm):
         logger.error("LLM is not initialized for Web extraction chain.")
         return None
 
-    # Simplified template using only cleaned web data
+    # Simplified template using only cleaned web data and passed instructions
     template = """
-You are an expert data extractor. Your task is to find the value for the requested 'Attribute to Extract' using ONLY the 'Cleaned Scraped Website Data' provided below.
+You are an expert data extractor. Your task is to find the value for the requested attribute based on the 'Extraction Instructions' using ONLY the 'Cleaned Scraped Website Data' provided below.
 
 --- Cleaned Scraped Website Data ---
 {cleaned_web_data}
 --- End Cleaned Scraped Website Data ---
 
-Attribute to Extract: {attribute_key}
+Extraction Instructions:
+{extraction_instructions}
 
 ---
 IMPORTANT: Respond with ONLY a single, valid JSON object containing exactly one key-value pair.
 - The key for the JSON object MUST be the string: "{attribute_key}"
-- The value MUST be the corresponding value for the requested attribute found within the Cleaned Scraped Website Data. Use the text provided.
+- The value MUST be the corresponding value found within the Cleaned Scraped Website Data, following the Extraction Instructions. Use the text provided.
 - Provide the value as a JSON string.
-- If the information related to the requested attribute is NOT found or is ambiguous within the provided data, the value MUST be "NOT FOUND".
+- If the information related to the requested attribute is NOT found or is ambiguous within the provided data based on the instructions, the value MUST be "NOT FOUND".
 - Do NOT guess, infer, or use information outside the Cleaned Scraped Website Data.
 - Do NOT include any explanations or reasoning outside the JSON object.
+
+Example Output Format:
+{{"{attribute_key}": "extracted_value_from_web_data"}}
 
 Output:
 """
     prompt = PromptTemplate.from_template(template)
 
-    # Simpler chain structure: directly map input keys needed by the prompt
+    # Chain structure similar to PDF chain to handle inputs
     web_chain = (
-        {
-            "cleaned_web_data": lambda x: x['cleaned_web_data'],
-            "attribute_key": lambda x: x['attribute_key']
-        }
+        RunnableParallel(
+            cleaned_web_data=RunnablePassthrough(),
+            extraction_instructions=RunnablePassthrough(),
+            attribute_key=RunnablePassthrough()
+        )
+        .assign(
+            cleaned_web_data=lambda x: x['cleaned_web_data']['cleaned_web_data'], # Nested dict access
+            extraction_instructions=lambda x: x['extraction_instructions']['extraction_instructions'],
+            attribute_key=lambda x: x['attribute_key']['attribute_key']
+        )
         | prompt
         | llm
         | StrOutputParser()
     )
-    logger.info("Web Data Extraction chain created successfully.")
+    logger.info("Web Data Extraction chain created successfully (accepts instructions).")
     return web_chain
 
 

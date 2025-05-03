@@ -99,6 +99,40 @@ from extraction_prompts import (
     # Specialized Attributes
     HV_QUALIFIED_PROMPT
 )
+# Import the NEW web prompts
+from extraction_prompts_web import (
+    # Material Properties
+    MATERIAL_FILLING_WEB_PROMPT,
+    MATERIAL_NAME_WEB_PROMPT,
+    # Physical / Mechanical Attributes
+    PULL_TO_SEAT_WEB_PROMPT,
+    GENDER_WEB_PROMPT,
+    HEIGHT_MM_WEB_PROMPT,
+    LENGTH_MM_WEB_PROMPT,
+    WIDTH_MM_WEB_PROMPT,
+    NUMBER_OF_CAVITIES_WEB_PROMPT,
+    NUMBER_OF_ROWS_WEB_PROMPT,
+    MECHANICAL_CODING_WEB_PROMPT,
+    COLOUR_WEB_PROMPT,
+    COLOUR_CODING_WEB_PROMPT,
+    # Sealing & Environmental
+    WORKING_TEMPERATURE_WEB_PROMPT,
+    HOUSING_SEAL_WEB_PROMPT,
+    WIRE_SEAL_WEB_PROMPT,
+    SEALING_WEB_PROMPT,
+    SEALING_CLASS_WEB_PROMPT,
+    # Terminals & Connections
+    CONTACT_SYSTEMS_WEB_PROMPT,
+    TERMINAL_POSITION_ASSURANCE_WEB_PROMPT,
+    CONNECTOR_POSITION_ASSURANCE_WEB_PROMPT,
+    CLOSED_CAVITIES_WEB_PROMPT,
+    # Assembly & Type
+    PRE_ASSEMBLED_WEB_PROMPT,
+    CONNECTOR_TYPE_WEB_PROMPT,
+    SET_KIT_WEB_PROMPT,
+    # Specialized Attributes
+    HV_QUALIFIED_WEB_PROMPT
+)
 
 
 # --- Streamlit Page Configuration ---
@@ -349,36 +383,39 @@ else:
         part_number = st.session_state.get("part_number_input", "").strip()
         # ---------------------
 
-        # Define the prompts (attribute keys and their detailed PDF instructions)
-        prompts_to_run = { # Keep this structure for PDF fallback
+        # Define the prompts (attribute keys mapped to PDF and WEB instructions)
+        prompts_to_run = { 
             # Material Properties
-            "Material Filling": MATERIAL_PROMPT,
-            "Material Name": MATERIAL_NAME_PROMPT,
+            "Material Filling": {"pdf": MATERIAL_PROMPT, "web": MATERIAL_FILLING_WEB_PROMPT},
+            "Material Name": {"pdf": MATERIAL_NAME_PROMPT, "web": MATERIAL_NAME_WEB_PROMPT},
             # Physical / Mechanical Attributes
-            "Pull-to-Seat": PULL_TO_SEAT_PROMPT,
-            "Gender": GENDER_PROMPT,
-            "Number of Cavities": NUMBER_OF_CAVITIES_PROMPT,
-            "Number of Rows": NUMBER_OF_ROWS_PROMPT,
-            "Mechanical Coding": MECHANICAL_CODING_PROMPT,
-            "Colour": COLOUR_PROMPT,
-            "Colour Coding": COLOUR_CODING_PROMPT,
+            "Pull-to-Seat": {"pdf": PULL_TO_SEAT_PROMPT, "web": PULL_TO_SEAT_WEB_PROMPT},
+            "Gender": {"pdf": GENDER_PROMPT, "web": GENDER_WEB_PROMPT},
+            "Height [MM]": {"pdf": HEIGHT_MM_PROMPT, "web": HEIGHT_MM_WEB_PROMPT},
+            "Length [MM]": {"pdf": LENGTH_MM_PROMPT, "web": LENGTH_MM_WEB_PROMPT},
+            "Width [MM]": {"pdf": WIDTH_MM_PROMPT, "web": WIDTH_MM_WEB_PROMPT},
+            "Number of Cavities": {"pdf": NUMBER_OF_CAVITIES_PROMPT, "web": NUMBER_OF_CAVITIES_WEB_PROMPT},
+            "Number of Rows": {"pdf": NUMBER_OF_ROWS_PROMPT, "web": NUMBER_OF_ROWS_WEB_PROMPT},
+            "Mechanical Coding": {"pdf": MECHANICAL_CODING_PROMPT, "web": MECHANICAL_CODING_WEB_PROMPT},
+            "Colour": {"pdf": COLOUR_PROMPT, "web": COLOUR_WEB_PROMPT},
+            "Colour Coding": {"pdf": COLOUR_CODING_PROMPT, "web": COLOUR_CODING_WEB_PROMPT},
             # Sealing & Environmental
-            "Working Temperature": WORKING_TEMPERATURE_PROMPT,
-            "Housing Seal": HOUSING_SEAL_PROMPT,
-            "Wire Seal": WIRE_SEAL_PROMPT,
-            "Sealing": SEALING_PROMPT,
-            "Sealing Class": SEALING_CLASS_PROMPT,
+            "Working Temperature": {"pdf": WORKING_TEMPERATURE_PROMPT, "web": WORKING_TEMPERATURE_WEB_PROMPT},
+            "Housing Seal": {"pdf": HOUSING_SEAL_PROMPT, "web": HOUSING_SEAL_WEB_PROMPT},
+            "Wire Seal": {"pdf": WIRE_SEAL_PROMPT, "web": WIRE_SEAL_WEB_PROMPT},
+            "Sealing": {"pdf": SEALING_PROMPT, "web": SEALING_WEB_PROMPT},
+            "Sealing Class": {"pdf": SEALING_CLASS_PROMPT, "web": SEALING_CLASS_WEB_PROMPT},
             # Terminals & Connections
-            "Contact Systems": CONTACT_SYSTEMS_PROMPT,
-            "Terminal Position Assurance": TERMINAL_POSITION_ASSURANCE_PROMPT,
-            "Connector Position Assurance": CONNECTOR_POSITION_ASSURANCE_PROMPT,
-            "Closed Cavities": CLOSED_CAVITIES_PROMPT,
+            "Contact Systems": {"pdf": CONTACT_SYSTEMS_PROMPT, "web": CONTACT_SYSTEMS_WEB_PROMPT},
+            "Terminal Position Assurance": {"pdf": TERMINAL_POSITION_ASSURANCE_PROMPT, "web": TERMINAL_POSITION_ASSURANCE_WEB_PROMPT},
+            "Connector Position Assurance": {"pdf": CONNECTOR_POSITION_ASSURANCE_PROMPT, "web": CONNECTOR_POSITION_ASSURANCE_WEB_PROMPT},
+            "Closed Cavities": {"pdf": CLOSED_CAVITIES_PROMPT, "web": CLOSED_CAVITIES_WEB_PROMPT},
             # Assembly & Type
-            "Pre-Assembled": PRE_ASSEMBLED_PROMPT,
-            "Type of Connector": CONNECTOR_TYPE_PROMPT,
-            "Set/Kit": SET_KIT_PROMPT,
+            "Pre-Assembled": {"pdf": PRE_ASSEMBLED_PROMPT, "web": PRE_ASSEMBLED_WEB_PROMPT},
+            "Type of Connector": {"pdf": CONNECTOR_TYPE_PROMPT, "web": CONNECTOR_TYPE_WEB_PROMPT},
+            "Set/Kit": {"pdf": SET_KIT_PROMPT, "web": SET_KIT_WEB_PROMPT},
             # Specialized Attributes
-            "HV Qualified": HV_QUALIFIED_PROMPT
+            "HV Qualified": {"pdf": HV_QUALIFIED_PROMPT, "web": HV_QUALIFIED_WEB_PROMPT}
         }
 
         # --- Block 1a: Scrape Web Table HTML (if needed) --- 
@@ -438,8 +475,9 @@ else:
 
         # --- Stage 1: Web Extraction --- 
         if scraped_table_html:
-            for prompt_name in prompts_to_run.keys(): # Iterate through all attributes
+            for prompt_name, instructions in prompts_to_run.items(): # Iterate through attributes and their instructions
                 attribute_key = prompt_name
+                web_instruction = instructions["web"] # Get WEB instruction
                 current_col = cols[col_index % 2]
                 col_index += 1
                 json_result_str = None
@@ -452,7 +490,8 @@ else:
                             start_time = time.time()
                             web_input = {
                                 "cleaned_web_data": scraped_table_html,
-                                "attribute_key": attribute_key
+                                "attribute_key": attribute_key,
+                                "extraction_instructions": web_instruction # Use specific web instruction
                             }
                             # --- Log the input to the web chain --- 
                             logger.debug(f"Invoking web_chain for '{attribute_key}' with input keys: {list(web_input.keys())}")
@@ -514,7 +553,6 @@ else:
                              final_answer_value = "Unexpected JSON Format"
                              parse_error = ValueError(f"Stage 1 Unexpected JSON keys: {list(parsed_json.keys())}")
                              needs_fallback = True # Fallback on unexpected format
-                             logger.warning(f"Stage 1 Unexpected JSON '{attribute_key}'. Queued for PDF fallback.")
                     else:
                         final_answer_value = "Unexpected JSON Type"
                         parse_error = TypeError(f"Stage 1 Expected dict, got {type(parsed_json)}")
@@ -587,7 +625,7 @@ else:
         else:
             for prompt_name in pdf_fallback_needed:
                 attribute_key = prompt_name
-                pdf_instruction = prompts_to_run[attribute_key] # Get detailed PDF instruction
+                pdf_instruction = prompts_to_run[attribute_key]["pdf"] # Get specific PDF instruction
                 current_col = cols[col_index % 2]
                 col_index += 1
                 json_result_str = None
@@ -599,7 +637,7 @@ else:
                         try:
                             start_time = time.time()
                             pdf_input = {
-                                "extraction_instructions": pdf_instruction,
+                                "extraction_instructions": pdf_instruction, # Use specific PDF instruction
                                 "attribute_key": attribute_key,
                                 "part_number": part_number if part_number else "Not Provided"
                             }
