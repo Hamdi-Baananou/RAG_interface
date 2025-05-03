@@ -495,17 +495,12 @@ Output:
 """
     prompt = PromptTemplate.from_template(template)
 
-    # Simpler chain, takes cleaned_web_data and attribute_key directly
+    # Simpler chain structure: directly map input keys needed by the prompt
     web_chain = (
-        RunnableParallel(
-             cleaned_web_data=RunnablePassthrough(),
-             attribute_key=RunnablePassthrough()
-        )
-        # Assign required keys for the prompt
-        .assign(
-            cleaned_web_data=lambda x: x['cleaned_web_data'],
-            attribute_key=lambda x: x['attribute_key']
-         )
+        {
+            "cleaned_web_data": lambda x: x['cleaned_web_data'],
+            "attribute_key": lambda x: x['attribute_key']
+        }
         | prompt
         | llm
         | StrOutputParser()
