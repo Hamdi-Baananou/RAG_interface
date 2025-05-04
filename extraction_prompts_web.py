@@ -83,11 +83,113 @@ MAX_WORKING_TEMPERATURE_WEB_PROMPT = """Max. Working Temperature in °C accordin
 MIN_WORKING_TEMPERATURE_WEB_PROMPT = """Min. Working Temperature in °C according the drawing/datasheet. If no value is available, please enter the value 999. min range temperature"""
 HOUSING_SEAL_WEB_PROMPT = """The type of sealing between the connector and its counterpart: Radial Seal / Interface seal."""
 WIRE_SEAL_WEB_PROMPT = """Wire seal describes the sealing of the space between wire and cavity wall, when a terminal is fitted in a cavity. There are different possibilities for sealing available: Single wire seal, Injected, Mat seal (includes "gel family seal" and "silicone family seal"), None."""
-SEALING_WEB_PROMPT = """Indicates if the connector is: Sealed or Unsealed"""
+SEALING_WEB_PROMPT = """Determine sealing status using this reasoning chain:
+
+    STEP 1: IP CODE EXTRACTION
+    - Scan for ISO 20653/IP codes:
+      ✓ Valid codes: IPx0, IPx4, IPx4K, IPx5, IPx6, IPx6K, IPx7, IPx8, IPx9, IPx9K
+      ✗ Ignore: IPx1, IPx2, IPx3
+
+    STEP 2: IP-BASED CLASSIFICATION
+    - If valid IP codes found:
+      → IPx0 → **Unsealed**
+      → Any other valid code → **Sealed**
+    - If multiple IP codes:
+      → Use highest protection level (e.g., IPx9K > IPx7)
+
+    STEP 3: FUNCTIONAL SEALING INDICATORS
+    - If no valid IP codes:
+      ✓ Check for sealing features:
+        * \"Waterproof\"/\"dustproof\"
+        * \"Sealed\"/\"gasket\"/\"O-ring\"
+        * \"Environmental protection\"
+      ✓ Check for explicit negatives:
+        * \"Unsealed\"/\"no sealing\"
+
+    STEP 4: CONFLICT RESOLUTION
+    - Priority hierarchy:
+      1. IP codes (STEP 2)
+      2. Explicit functional terms (STEP 3)
+      3. Default to NOT FOUND
+
+    STEP 5: FINAL VALIDATION
+    - **Sealed** requires:
+      ✓ IP code ≥IPx4 OR
+      ✓ Functional sealing description
+    - **Unsealed** requires:
+      ✓ IPx0 OR
+      ✓ Explicit lack of sealing
+
+    Examples:
+    \"IPx9K-rated for high-pressure washdown\"
+    → REASONING: [Step1] IPx9K → [Step2] Sealed
+    → SEALING: Sealed
+
+    \"No IP rating but includes silicone gasket\"
+    → REASONING: [Step1] No IP → [Step3] Gasket → Sealed
+    → SEALING: Sealed
+
+    \"IPx0 connector with 'dust-resistant' claim\"
+    → REASONING: [Step1] IPx0 → [Step4] Overrides description → Unsealed
+    → SEALING: Unsealed
+
+    Output format:
+    SEALING: [Sealed/Unsealed/Not Found]"""
 SEALING_CLASS_WEB_PROMPT = """Determine the IP sealing class"""
 
 # --- Terminals & Connections ---
-CONTACT_SYSTEMS_WEB_PROMPT = """This attribute is used to define which contact system is approved for the connector by the supplier/manufacturer. Is more than one contact system used in a connector, all of them must be filled in this attribute."""
+CONTACT_SYSTEMS_WEB_PROMPT = """Identify approved contact systems using this reasoning chain:
+
+    STEP 1: SOURCE IDENTIFICATION
+    - Scan for:
+      ✓ Explicit system families (MQS, MLK, SLK, etc.)
+      ✓ Terminal part numbers (123-4567, XW3D-XXXX-XX)
+      ✓ Manufacturer approval statements:
+        * \"Approved for use with...\"
+        * \"Compatible contact systems:\"
+        * \"Recommended mating system\"
+
+    STEP 2: MANUFACTURER PRIORITIZATION
+    - Verify mentions are supplier-specified:
+      ✓ Direct manufacturer recommendations
+      ✗ Customer-specific part numbers
+      ✗ Generic terminal references
+
+    STEP 3: SYSTEM RESOLUTION HIERARCHY
+    1. Primary: Explicit family mentions (MQS 0.64)
+    2. Secondary: Part number mapping:
+       - Cross-reference with manufacturer catalogs
+       - Match patterns (e.g., 928321-1 → TE MCP 1.2)
+    3. Reject unidentifiable part numbers
+
+    STEP 4: MULTI-SYSTEM VALIDATION
+    - Check for:
+      ✓ Multiple approval statements
+      ✓ Hybrid connector systems
+      ✓ Generation variants (MQS Gen2 vs Gen3)
+    - Require explicit documentation for each system
+
+    STEP 5: STANDARDIZATION CHECK
+    - Convert to manufacturer nomenclature:
+      \"Micro Quadlock\" → MQS
+      \"H-MTD\" → HMTD
+    - Maintain versioning: MLK 1.2 ≠ MLK 2.0
+
+    Examples:
+    \"Approved systems: MQS 0.64 & SLK 2.8 (P/N 345-789)\"
+    → REASONING: [Step1] MQS/SLK explicit → [Step2] Approved → [Step5] Standardized
+    → CONTACT SYSTEMS: MQS 0.64,SLK 2.8
+
+    \"Terminals: 927356-1 (MCP series)\"
+    → REASONING: [Step1] Part number → [Step3] Mapped to MCP → [Step2] Implicit approval
+    → CONTACT SYSTEMS: MCP
+
+    \"Compatible with various 2.8mm systems\"
+    → REASONING: [Step1] Vague → [Step5] Non-specific → [Final] NOT FOUND
+    → CONTACT SYSTEMS: NOT FOUND
+
+    Output format:
+    CONTACT SYSTEMS: [system1,system2,.../Not Found]"""
 TERMINAL_POSITION_ASSURANCE_WEB_PROMPT = """Indicates the number of available TPAs, which are content of the delivered connector (TPAs preassembled). If a separate TPA or more than one, regularly with their own part number, has to be assembled at LEONI production, the amount is given within HD (Housing Definition). In such cases, then here "0" has to be filled.
 To guarantee a further locking of a terminal in a connector - the firstly/primary locking is done by the lances at the terminals or at the housings - a secondary locking is provided, the terminal position assurance = TPA. Sometimes it is named 'Anti-Backout'."""
 CONNECTOR_POSITION_ASSURANCE_WEB_PROMPT = """CPA is an additional protection to ensure, that the connector is placed correctly to the counterpart and that the connector won´t be removed unintentional. Sometimes it's named 'Anti-Backout'."""
