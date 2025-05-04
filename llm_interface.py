@@ -474,7 +474,7 @@ def create_web_extraction_chain(llm):
 
     # Simplified template using only cleaned web data and passed instructions
     template = """
-You are an expert data extractor. Your task is to find the value for the requested attribute based on the 'Extraction Instructions' using ONLY the 'Cleaned Scraped Website Data' provided below.
+You are an expert data extractor. Your goal is to answer a specific piece of information based on the 'Extraction Instructions' using ONLY the 'Cleaned Scraped Website Data' provided below.
 
 --- Cleaned Scraped Website Data ---
 {cleaned_web_data}
@@ -533,20 +533,45 @@ async def _invoke_chain_and_process(chain, input_data, attribute_key):
          logger.error(f"Chain invocation returned None for '{attribute_key}'")
          return json.dumps({"error": f"Chain invocation returned None for {attribute_key}"})
 
-    # Clean response (<think>, ```json)
+    # --- Enhanced Cleaning --- 
     cleaned_response = response
+    
+    # 1. Remove <think> tags (already handled)
     think_start_tag = "<think>"
     think_end_tag = "</think>"
-    start_index = cleaned_response.find(think_start_tag)
-    end_index = cleaned_response.find(think_end_tag)
-    if start_index != -1 and end_index != -1 and end_index > start_index:
-         cleaned_response = cleaned_response[end_index + len(think_end_tag):].strip()
+    start_index_think = cleaned_response.find(think_start_tag)
+    end_index_think = cleaned_response.find(think_end_tag)
+    if start_index_think != -1 and end_index_think != -1 and end_index_think > start_index_think:
+         cleaned_response = cleaned_response[end_index_think + len(think_end_tag):].strip()
 
+    # 2. Remove ```json ... ``` markdown (already handled)
     if cleaned_response.strip().startswith("```json"):
         cleaned_response = cleaned_response.strip()[7:]
         if cleaned_response.endswith("```"):
             cleaned_response = cleaned_response[:-3]
-    cleaned_response = cleaned_response.strip()
+        cleaned_response = cleaned_response.strip()
+
+    # 3. Find the first '{' and the last '}' to isolate the JSON object
+    try:
+        first_brace = cleaned_response.find('{')
+        last_brace = cleaned_response.rfind('}')
+        if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+            potential_json = cleaned_response[first_brace : last_brace + 1]
+            # Attempt to parse the isolated part
+            json.loads(potential_json) # Test if it's valid JSON
+            cleaned_response = potential_json # If valid, use this isolated part
+            logger.debug(f"Isolated potential JSON for '{attribute_key}': {cleaned_response}")
+        else:
+             logger.warning(f"Could not find clear JSON braces {{...}} in response for '{attribute_key}'. Using original cleaned response.")
+    except json.JSONDecodeError:
+        logger.warning(f"Failed to parse isolated JSON for '{attribute_key}'. Using original cleaned response. Raw: {cleaned_response}")
+        # If parsing the isolated part fails, fall back to the previously cleaned response
+        pass 
+    except Exception as e:
+         logger.error(f"Unexpected error during JSON isolation for '{attribute_key}': {e}")
+         # Fallback
+         pass
+    # --- End Enhanced Cleaning ---
 
     return cleaned_response # Validation happens in the caller (app.py now)
 
