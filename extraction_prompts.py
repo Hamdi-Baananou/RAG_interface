@@ -6,7 +6,7 @@ MATERIAL_PROMPT = """
 Extract material filling additives:
  Material filling describes additives added to the base material in order to influence the mechanical material characteristics. Most common additives are GF (glass-fiber), GB (glass-balls), MF (mineral-fiber) and T (talcum).
     **Output format:**
-    MATERIAL FILLING: [abbreviations/none/NOT FOUND]
+    MATERIAL FILLING: [abbreviations/none]
 """
 
 MATERIAL_NAME_PROMPT = """
@@ -214,7 +214,7 @@ Examples:
 
 Output format:
 REASONING: [Key determinations following the steps and priority rule]
-GENDER: [Male/Female/Unisex/Hybrid/NOT FOUND]
+GENDER: [Male/Female/Unisex/Hybrid]
 """
 
 HEIGHT_MM_PROMPT = """
@@ -396,7 +396,7 @@ Determine connector width using this reasoning chain:
     → WIDTH [MM]: 26.2
 
     Output format:
-    WIDTH [MM]: [value/NOT FOUND]
+    WIDTH [MM]: [value]
 """
 
 NUMBER_OF_CAVITIES_PROMPT = """
@@ -580,7 +580,7 @@ Determine connector color using this reasoning chain:
     → COLOUR: multi
 
     Output format:
-    COLOUR: [color/multi/NOT FOUND]
+    COLOUR: [color/multi]
 """
 
 COLOUR_CODING_PROMPT = """
@@ -629,7 +629,7 @@ Determine Colour Coding using this reasoning chain:
     → COLOUR CODING: none
 
     Output format:
-    COLOUR CODING: [Color/none/NOT FOUND]
+    COLOUR CODING: [Color/none]
 """
 
 # --- Sealing & Environmental ---
@@ -696,7 +696,7 @@ Determine working temperatures using this reasoning chain:
     → WORKING TEMPERATURE: NOT FOUND
 
   Output format:
-    WORKING TEMPERATURE: /[Max]/[Min]/NOT FOUND
+    WORKING TEMPERATURE: /[Max]/[Min]
 """
 
 HOUSING_SEAL_PROMPT = """
@@ -940,7 +940,7 @@ Identify approved contact systems using this reasoning chain:
     → CONTACT SYSTEMS: NOT FOUND
 
     Output format:
-    CONTACT SYSTEMS: [system1,system2,.../NOT FOUND]
+    CONTACT SYSTEMS: [system1,system2,...]
 """
 
 TERMINAL_POSITION_ASSURANCE_PROMPT = """
@@ -992,7 +992,7 @@ Determine Terminal Position Assurance (TPA) count using this reasoning chain:
     → TERMINAL POSITION ASSURANCE: 2
 
     Output format:
-    TERMINAL POSITION ASSURANCE: [number/0/NOT FOUND]
+    TERMINAL POSITION ASSURANCE: [number/0]
 """
 
 CONNECTOR_POSITION_ASSURANCE_PROMPT = """
@@ -1142,7 +1142,7 @@ Determine pre-assembly status using this reasoning chain:
     → PRE-ASSEMBLED: NOT FOUND
 
     Output format:
-    PRE-ASSEMBLED: [Yes/No/NOT FOUND]
+    PRE-ASSEMBLED: [Yes/No]
 """
 
 CONNECTOR_TYPE_PROMPT = """
@@ -1194,7 +1194,7 @@ Determine the **Type of Connector** using this reasoning chain:
     → TYPE OF CONNECTOR: NOT FOUND
 
     Output format:
-    TYPE OF CONNECTOR: [Standard/Contact Carrier/Actuator/Other/NOT FOUND]
+    TYPE OF CONNECTOR: [Standard/Contact Carrier/Actuator/Other]
 """
 
 SET_KIT_PROMPT = """
@@ -1246,7 +1246,7 @@ Determine the **Set/Kit** status using this reasoning chain:
     → SET/KIT: NOT FOUND
 
     Output format:
-    SET/KIT: [Yes/No/NOT FOUND]
+    SET/KIT: [Yes/No]
 """
 
 # --- Specialized Attributes ---
