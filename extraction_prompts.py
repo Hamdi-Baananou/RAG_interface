@@ -767,61 +767,9 @@ HOUSING SEAL: [Radial Seal / Interface Seal ]
 """
 
 WIRE_SEAL_PROMPT = """
-Determine the Wire Seal type using this reasoning chain:
+Determine the Wire Seal type:
 
-    STEP 1: TERM IDENTIFICATION
-    - Scan for explicit keywords:
-      ✓ **Single Wire Seal**:
-        * \"Per-wire seal\"
-        * Unique part numbers tied to wire sizes (e.g., \"SW-5A for 2.8mm wires\")
-      ✓ **Injected**:
-        * \"Injected sealant\"
-        * \"Potting compound\" (if cavity-specific)
-      ✓ **Mat Seal**:
-        * \"Gel seal\"/\"Silicone mat\"
-        * \"Family seal system\"
-      ✓ **None**:
-        * \"Unsealed cavities\"
-        * \"No wire sealing required\"
-
-    STEP 2: CONTEXT VALIDATION
-    - Confirm terms relate to **wire-to-cavity sealing**:
-      ✓ Reject general seals (e.g., housing radial seals)
-      ✓ Validate part numbers:
-        * \"SW-\" prefix → Single Wire Seal
-        * \"GEL-\" prefix → Mat Seal
-
-    STEP 3: CLASSIFICATION HIERARCHY
-    1. **Single Wire Seal** if part numbers map to wire sizes/positions
-    2. **Injected** for cavity-specific injected materials
-    3. **Mat Seal** for gel/silicone family terms
-    4. **None** if explicitly stated or implied by absence
-
-    STEP 4: CONFLICT RESOLUTION
-    - Multiple seal types? → Prioritize:
-      1. Explicit statements (\"Primary seal: Injected\")
-      2. Part number evidence
-      3. Document specificity (e.g., \"Mat Seal\" vs generic \"sealed\")
-
-    STEP 5: DEFAULT HANDLING
-    - No terms/part numbers after Steps 1-4? → **NOT FOUND**
-
-    Examples:
-    \"Cavity seals: SW-12 (1.5mm²) / SW-14 (2.5mm²)\"
-    → REASONING: [Step1] Part numbers + wire sizes → **Single Wire Seal**
-    → WIRE SEAL: Single Wire Seal
-
-    \"Injected epoxy seals for all cavities\"
-    → REASONING: [Step1] \"Injected\" + cavity context → **Injected**
-    → WIRE SEAL: Injected
-
-    \"Gel-based family sealing system\"
-    → REASONING: [Step1] \"Gel\" + \"family\" → **Mat Seal**
-    → WIRE SEAL: Mat Seal
-
-    \"Terminal cavities require no additional sealing\"
-    → REASONING: [Step1] Explicit negation → **None**
-    → WIRE SEAL: None
+    Wire seal describes the sealing of the space between wire and cavity wall, when a terminal is fitted in a cavity. There are different possibilities for sealing available: Single wire seal, Injected, Mat seal (includes “gel family seal” and “silicone family seal”), None.
 
     Output format:
     WIRE SEAL: [Single Wire Seal/Injected/Mat Seal/None]

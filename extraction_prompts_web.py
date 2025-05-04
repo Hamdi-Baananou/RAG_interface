@@ -199,7 +199,55 @@ CLOSED_CAVITIES_WEB_PROMPT = """Here the number of the cavities, which are close
 PRE_ASSEMBLED_WEB_PROMPT = """This attribute defines if the connector is delivered as an assembly, which has to be disassembled in our production in order to use it.
 Connectors with a preassembled TPA and/or CPA and/or lever and/or etc., which haven´t to be disassembled in our production, get the value "No".
 If the connector must be disassembled in our production before we can use it, get the value "Yes"."""
-CONNECTOR_TYPE_WEB_PROMPT = """The type describes roughly the application area that the connector is designed: Standard, Contact Carrier, Actuator…"""
+CONNECTOR_TYPE_WEB_PROMPT = """Determine the **Type of Connector** using this reasoning chain:
+
+    STEP 1: EXPLICIT TYPE IDENTIFICATION
+    - Scan for exact terms:
+      ✓ \"Standard\"
+      ✓ \"Contact Carrier\"
+      ✓ \"Actuator\"
+      ✓ Other documented types (e.g., \"Sensor\", \"Power Distribution\")
+
+    STEP 2: CONTEXTUAL INFERENCE
+    - If no explicit type:
+      ✓ Analyze application context:
+        * \"Modular contact housing\" → **Contact Carrier**
+        * \"Used in mechanical actuation systems\" → **Actuator**
+        * \"General-purpose\" / No special features → **Standard**
+      ✓ Map keywords to types:
+        * \"Carrier,\" \"module holder\" → Contact Carrier
+        * \"Movement,\" \"lever-operated\" → Actuator
+        * \"Universal,\" \"base model\" → Standard
+
+    STEP 3: APPLICATION VALIDATION
+    - Verify inferred type aligns with:
+      ✓ Connector design (e.g., Contact Carriers have modular slots)
+      ✓ System integration described (e.g., Actuators link to moving parts)
+      ✗ Reject mismatches (e.g., \"Actuator\" term in a static assembly)
+
+    STEP 4: DEFAULT RESOLUTION
+    - No explicit/inferred type? → **NOT FOUND**
+    - Generic connector without specialized use? → **Standard**
+
+    Examples:
+    \"Modular Contact Carrier (P/N CC-234)\"
+    → REASONING: [Step1] Explicit → **Contact Carrier**
+    → TYPE OF CONNECTOR: Contact Carrier
+
+    \"Connector for actuator assembly in robotic arm\"
+    → REASONING: [Step2] \"actuator\" context → **Actuator**
+    → TYPE OF CONNECTOR: Actuator
+
+    \"General automotive wiring connector\"
+    → REASONING: [Step4] Generic → **Standard**
+    → TYPE OF CONNECTOR: Standard
+
+    \"High-voltage junction module\"
+    → REASONING: [Step1-2] No matches → [Step4] **NOT FOUND**
+    → TYPE OF CONNECTOR: NOT FOUND
+
+    Output format:
+    TYPE OF CONNECTOR: [Standard/Contact Carrier/Actuator/Other/Not Found]"""
 SET_KIT_WEB_PROMPT = """If a connector is delivered as a 'Set/Kit' with one LEONI part number, means connector with separate accessories (cover, lever, TPA,…) which aren´t preassembled, then it is Yes. All loose pieces are handled with the same Leoni part number.
 If all loose pieces have their own LEONI part number, then it is No."""
 
