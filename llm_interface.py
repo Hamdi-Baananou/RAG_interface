@@ -472,9 +472,9 @@ def create_web_extraction_chain(llm):
         logger.error("LLM is not initialized for Web extraction chain.")
         return None
 
-    # Simplified template using only cleaned web data and passed instructions
+    # Simplified template allowing reasoning based on web data and instructions
     template = """
-You are an expert data extractor. Your goal is to answer a specific piece of information based on the 'Extraction Instructions' using ONLY the 'Cleaned Scraped Website Data' provided below.
+You are an expert data extractor. Your goal is to answer a specific piece of information by applying the logic described in the 'Extraction Instructions' to the 'Cleaned Scraped Website Data' provided below. Use ONLY the provided website data as your context.
 
 --- Cleaned Scraped Website Data ---
 {cleaned_web_data}
@@ -484,16 +484,17 @@ Extraction Instructions:
 {extraction_instructions}
 
 ---
-IMPORTANT: Respond with ONLY a single, valid JSON object containing exactly one key-value pair.
+IMPORTANT: Follow the Extraction Instructions carefully using the website data.
+Respond with ONLY a single, valid JSON object containing exactly one key-value pair.
 - The key for the JSON object MUST be the string: "{attribute_key}"
-- The value MUST be the corresponding value found within the Cleaned Scraped Website Data, following the Extraction Instructions. Use the text provided.
+- The value MUST be the result obtained by applying the Extraction Instructions to the Cleaned Scraped Website Data.
 - Provide the value as a JSON string.
-- If the information related to the requested attribute is NOT found or is ambiguous within the provided data based on the instructions, the value MUST be "NOT FOUND".
+- If the information cannot be determined from the Cleaned Scraped Website Data based on the instructions, the value MUST be "NOT FOUND".
 - Do NOT guess, infer, or use information outside the Cleaned Scraped Website Data.
 - Do NOT include any explanations or reasoning outside the JSON object.
 
 Example Output Format:
-{{"{attribute_key}": "extracted_value_from_web_data"}}
+{{"{attribute_key}": "extracted_value_based_on_instructions"}}
 
 Output:
 """
