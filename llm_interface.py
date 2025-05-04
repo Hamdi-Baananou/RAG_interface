@@ -489,7 +489,6 @@ Respond with ONLY a single, valid JSON object containing exactly one key-value p
 - The value MUST be the result obtained by applying the Extraction Instructions to the Cleaned Scraped Website Data.
 - Provide the value as a JSON string.
 - If the information cannot be determined from the Cleaned Scraped Website Data based on the instructions, the value MUST be "NOT FOUND".
-- Do NOT guess, infer, or use information outside the Cleaned Scraped Website Data.
 - Do NOT include any explanations or reasoning outside the JSON object.
 
 Example Output Format:
