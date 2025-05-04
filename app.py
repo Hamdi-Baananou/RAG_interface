@@ -116,7 +116,8 @@ from extraction_prompts_web import (
     COLOUR_WEB_PROMPT,
     COLOUR_CODING_WEB_PROMPT,
     # Sealing & Environmental
-    WORKING_TEMPERATURE_WEB_PROMPT,
+    MAX_WORKING_TEMPERATURE_WEB_PROMPT,
+    MIN_WORKING_TEMPERATURE_WEB_PROMPT,
     HOUSING_SEAL_WEB_PROMPT,
     WIRE_SEAL_WEB_PROMPT,
     SEALING_WEB_PROMPT,
@@ -400,7 +401,8 @@ else:
             "Colour": {"pdf": COLOUR_PROMPT, "web": COLOUR_WEB_PROMPT},
             "Colour Coding": {"pdf": COLOUR_CODING_PROMPT, "web": COLOUR_CODING_WEB_PROMPT},
             # Sealing & Environmental
-            "Working Temperature": {"pdf": WORKING_TEMPERATURE_PROMPT, "web": WORKING_TEMPERATURE_WEB_PROMPT},
+            "Max. Working Temperature [°C]": {"pdf": WORKING_TEMPERATURE_PROMPT, "web": MAX_WORKING_TEMPERATURE_WEB_PROMPT},
+            "Min. Working Temperature [°C]": {"pdf": WORKING_TEMPERATURE_PROMPT, "web": MIN_WORKING_TEMPERATURE_WEB_PROMPT},
             "Housing Seal": {"pdf": HOUSING_SEAL_PROMPT, "web": HOUSING_SEAL_WEB_PROMPT},
             "Wire Seal": {"pdf": WIRE_SEAL_PROMPT, "web": WIRE_SEAL_WEB_PROMPT},
             "Sealing": {"pdf": SEALING_PROMPT, "web": SEALING_WEB_PROMPT},
