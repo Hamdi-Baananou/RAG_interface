@@ -432,7 +432,6 @@ IMPORTANT: Respond with ONLY a single, valid JSON object containing exactly one 
 - The key for the JSON object MUST be the string: "{attribute_key}"
 - The value MUST be the extracted result determined by following the Extraction Instructions using the Document Context provided above.
 - Provide the value as a JSON string. Examples: "GF, T", "none", "NOT FOUND", "Female", "7.2", "999".
-- If the information cannot be found in the Document Context based on the instructions, the value MUST be "NOT FOUND".
 - Do NOT include any explanations, reasoning, or any text outside of the single JSON object in your response.
 
 Example Output Format:
