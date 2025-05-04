@@ -13,9 +13,13 @@ LENGTH_MM_WEB_PROMPT = "Extract Length [MM] value"
 WIDTH_MM_WEB_PROMPT = "Extract Width [MM] value"
 NUMBER_OF_CAVITIES_WEB_PROMPT = "Extract Number of Cavities value"
 NUMBER_OF_ROWS_WEB_PROMPT = "Extract Number of Rows value"
-MECHANICAL_CODING_WEB_PROMPT = "Extract Mechanical Coding value"
+MECHANICAL_CODING_WEB_PROMPT = """Determine the Mechanical Coding value, A mechanical coding is designed at the plugged connector and its counterpart. The coding is used to avoid failures during pushing process.
+The location of the tongue and groove at the plastic parts are varying with the different mechanical coding (A/B/C/D).
+Often the coding is mentioned on the drawing, but sometimes not and then it is only drawn. In this case, we use the value: "no naming".
+If all available coding of a connector family are fitting in a universal coded (= neutral or 0 coding) connector, the universal connector has the coding value = Z.
+If the connector has no coding, the value = none."""
 COLOUR_WEB_PROMPT = "Extract Colour value"
-COLOUR_CODING_WEB_PROMPT = "Determine the color coding of the connector. It’s the colour used to distinguish between connectors of a connector family, existing in the same drawing. To be able to talk about colour coding, the following conditions must be met: 1. connectors must have a mechanical coding, 2. connectors must have different/additional color of individual parts in the housing If the connector has no colour coding -> value = none To be able to talk about colour coding, the following conditions must be met: 1. connectors must have a mechanical coding, 2. connectors must have different/additional color of individual parts in the housing,If the connector has no colour coding -> value = none"
+COLOUR_CODING_WEB_PROMPT = "Determine the color coding of the connector. It's the colour used to distinguish between connectors of a connector family, existing in the same drawing. To be able to talk about colour coding, the following conditions must be met: 1. connectors must have a mechanical coding, 2. connectors must have different/additional color of individual parts in the housing If the connector has no colour coding -> value = none To be able to talk about colour coding, the following conditions must be met: 1. connectors must have a mechanical coding, 2. connectors must have different/additional color of individual parts in the housing,If the connector has no colour coding -> value = none"
 
 # --- Sealing & Environmental ---
 WORKING_TEMPERATURE_WEB_PROMPT = "Extract Working Temperature value(s)"
@@ -32,7 +36,7 @@ CLOSED_CAVITIES_WEB_PROMPT = "Extract Closed Cavities value(s)"
 
 # --- Assembly & Type ---
 PRE_ASSEMBLED_WEB_PROMPT = "Extract Pre-Assembled value"
-CONNECTOR_TYPE_WEB_PROMPT = "Extract Type of Connector value"
+CONNECTOR_TYPE_WEB_PROMPT = "Determine the type of connector. The type describes roughly the application area that the connector is designed: Standard, Contact Carrier, Actuator…"
 SET_KIT_WEB_PROMPT = "Extract Set/Kit value"
 
 # --- Specialized Attributes ---
