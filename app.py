@@ -143,6 +143,39 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- Custom Navigation Bar ---
+# Create a container for the navbar
+nav_container = st.container()
+with nav_container:
+    # Create two columns for the navbar
+    nav_col1, nav_col2 = st.columns([3, 1])
+    
+    # Company name on the left
+    with nav_col1:
+        st.markdown(
+            """
+            <style>
+            .company-name {
+                font-size: 24px;
+                font-weight: bold;
+                color: #1E88E5;
+                margin: 0;
+                padding: 10px 0;
+            }
+            </style>
+            <p class="company-name">TE Connectivity</p>
+            """,
+            unsafe_allow_html=True
+        )
+    
+    # Button on the right
+    with nav_col2:
+        if st.button("📊 Dashboard", key="nav_dashboard"):
+            st.rerun()
+
+# Add a divider after the navbar
+st.divider()
+
 # --- Logging Configuration ---
 # Configure Loguru logger (can be more flexible than standard logging)
 # logger.add("logs/app_{time}.log", rotation="10 MB", level="INFO") # Example: Keep file logging if desired
