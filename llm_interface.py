@@ -464,7 +464,15 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
             )
         browser_config = BrowserConfig(
             verbose=True, # Enable verbose browser logging
-            headless=False # Try with visible browser for debugging
+            headless=True, # Use headless mode since we don't have X server
+            args=[
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--disable-gpu',
+                '--window-size=1920x1080'
+            ]
         )
 
         try:
