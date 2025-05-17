@@ -498,83 +498,150 @@ def clean_scraped_html(html_content: str, site_name: str) -> Optional[str]:
 
     try:
         if site_name == "TraceParts":
-            # First try the new specifications format
-            specs_div = soup.select_one('.tp-product-specifications')
-            if specs_div:
-                for li in specs_div.select('li'):
-                    title = li.select_one('.title')
-                    value = li.select_one('.value')
-                    if title and value:
-                        key = title.get_text(strip=True).replace(':', '').strip()
-                        val = value.get_text(strip=True)
-                        if key and val:
-                            extracted_texts.append(f"{key}: {val}")
-                logger.info(f"Extracted {len(extracted_texts)} features from new TraceParts format.")
+            # Try multiple selectors for specifications
+            specs_selectors = [
+                '.tp-product-specifications',
+                '.technical-data-table',
+                '.product-details-table',
+                '.specifications-table',
+                '#product-specifications',
+                '.product-specifications'
+            ]
             
-            # If no specs found in new format, try tables as fallback
-            if not extracted_texts:
-                tables = soup.find_all('table', class_=['technical-data-table', 'product-details-table'])
-                for table in tables:
-                    rows = table.find_all('tr')
-                    for row in rows:
-                        cells = row.find_all(['td', 'th'])
+            for selector in specs_selectors:
+                elements = soup.select(selector)
+                for element in elements:
+                    # Try to find key-value pairs in different formats
+                    # Format 1: List items with title and value classes
+                    for li in element.select('li'):
+                        title = li.select_one('.title, .spec-title, .spec-name')
+                        value = li.select_one('.value, .spec-value, .spec-data')
+                        if title and value:
+                            key = title.get_text(strip=True).replace(':', '').strip()
+                            val = value.get_text(strip=True)
+                            if key and val:
+                                extracted_texts.append(f"{key}: {val}")
+                    
+                    # Format 2: Table rows
+                    for row in element.select('tr'):
+                        cells = row.select('td, th')
                         if len(cells) >= 2:
                             key = cells[0].get_text(strip=True).replace(':', '').strip()
                             value = cells[1].get_text(strip=True)
                             if key and value:
                                 extracted_texts.append(f"{key}: {value}")
-                logger.info(f"Extracted {len(extracted_texts)} features from TraceParts tables.")
+                    
+                    # Format 3: Div pairs
+                    for div in element.select('div'):
+                        if div.find_previous_sibling('div'):
+                            key = div.find_previous_sibling('div').get_text(strip=True).replace(':', '').strip()
+                            value = div.get_text(strip=True)
+                            if key and value:
+                                extracted_texts.append(f"{key}: {value}")
 
-        elif site_name == "TE Connectivity":
-            # Find all feature list items within the main panel
-            feature_items = soup.find_all('li', class_='product-feature')
-            if not feature_items:
-                # Maybe the main selector was wrong? Try finding the panel first
-                panel = soup.find(id='pdp-features-tabpanel')
-                if panel:
-                    feature_items = panel.find_all('li', class_='product-feature')
-            
-            if feature_items:
-                for item in feature_items:
-                    title_span = item.find('span', class_='feature-title')
-                    value_em = item.find('em', class_='feature-value')
-                    if title_span and value_em:
-                        title = title_span.get_text(strip=True).replace(':', '').strip()
-                        value = value_em.get_text(strip=True)
-                        if title and value:
-                            extracted_texts.append(f"{title}: {value}")
-                logger.info(f"Extracted {len(extracted_texts)} features from TE Connectivity HTML.")
-            else:
-                logger.warning(f"Could not find 'li.product-feature' items in the TE Connectivity HTML provided.")
+            # If still no specs found, try to extract any text that looks like a specification
+            if not extracted_texts:
+                for text in soup.stripped_strings:
+                    if ':' in text:
+                        key, value = text.split(':', 1)
+                        if key.strip() and value.strip():
+                            extracted_texts.append(f"{key.strip()}: {value.strip()}")
+
+            logger.info(f"Extracted {len(extracted_texts)} features from TraceParts.")
 
         elif site_name == "Mouser":
-            # Find all tables with product details or specifications
-            tables = soup.find_all('table', class_=['product-details-table', 'specifications-table'])
-            for table in tables:
-                rows = table.find_all('tr')
-                for row in rows:
-                    cells = row.find_all(['td', 'th'])
-                    if len(cells) >= 2:
-                        key = cells[0].get_text(strip=True).replace(':', '').strip()
-                        value = cells[1].get_text(strip=True)
-                        if key and value:
-                            extracted_texts.append(f"{key}: {value}")
-            logger.info(f"Extracted {len(extracted_texts)} features from Mouser HTML.")
+            # Try multiple selectors for Mouser
+            specs_selectors = [
+                '.product-details-table',
+                '.specifications-table',
+                '.product-specifications',
+                '.product-attributes',
+                '.product-features'
+            ]
+            
+            for selector in specs_selectors:
+                elements = soup.select(selector)
+                for element in elements:
+                    # Try different formats
+                    # Format 1: Table rows
+                    for row in element.select('tr'):
+                        cells = row.select('td, th')
+                        if len(cells) >= 2:
+                            key = cells[0].get_text(strip=True).replace(':', '').strip()
+                            value = cells[1].get_text(strip=True)
+                            if key and value:
+                                extracted_texts.append(f"{key}: {value}")
+                    
+                    # Format 2: List items
+                    for li in element.select('li'):
+                        text = li.get_text(strip=True)
+                        if ':' in text:
+                            key, value = text.split(':', 1)
+                            if key.strip() and value.strip():
+                                extracted_texts.append(f"{key.strip()}: {value.strip()}")
 
-        else:
-            logger.warning(f"No specific HTML cleaning logic defined for site: {site_name}. Returning raw text content as fallback.")
-            # Fallback: return just the text content of the whole block
-            return soup.get_text(separator=' ', strip=True)
+            logger.info(f"Extracted {len(extracted_texts)} features from Mouser.")
+
+        elif site_name == "TE Connectivity":
+            # Try multiple selectors for TE
+            specs_selectors = [
+                '.product-features',
+                '.product-specifications',
+                '.technical-specifications',
+                '#pdp-features-tabpanel',
+                '.specifications-panel'
+            ]
+            
+            for selector in specs_selectors:
+                elements = soup.select(selector)
+                for element in elements:
+                    # Try different formats
+                    # Format 1: Feature items
+                    for item in element.select('li.product-feature, .feature-item'):
+                        title = item.select_one('.feature-title, .title')
+                        value = item.select_one('.feature-value, .value')
+                        if title and value:
+                            key = title.get_text(strip=True).replace(':', '').strip()
+                            val = value.get_text(strip=True)
+                            if key and val:
+                                extracted_texts.append(f"{key}: {val}")
+                    
+                    # Format 2: Any text with colon
+                    for text in element.stripped_strings:
+                        if ':' in text:
+                            key, value = text.split(':', 1)
+                            if key.strip() and value.strip():
+                                extracted_texts.append(f"{key.strip()}: {value.strip()}")
+
+            logger.info(f"Extracted {len(extracted_texts)} features from TE Connectivity.")
+
+        # If no specific site logic worked, try generic extraction
+        if not extracted_texts:
+            logger.warning(f"No specific extraction logic worked for {site_name}, trying generic extraction...")
+            # Look for any text that looks like a key-value pair
+            for text in soup.stripped_strings:
+                if ':' in text:
+                    key, value = text.split(':', 1)
+                    if key.strip() and value.strip():
+                        extracted_texts.append(f"{key.strip()}: {value.strip()}")
 
         if not extracted_texts:
             logger.warning(f"HTML cleaning for {site_name} resulted in no text extracted.")
-            return None # Return None if nothing was extracted
+            return None
 
-        return "\\n".join(extracted_texts)
+        # Remove duplicates while preserving order
+        seen = set()
+        unique_texts = []
+        for text in extracted_texts:
+            if text not in seen:
+                seen.add(text)
+                unique_texts.append(text)
+
+        return "\\n".join(unique_texts)
 
     except Exception as e:
         logger.error(f"Error cleaning HTML for {site_name}: {e}", exc_info=True)
-        return None # Return None on parsing error
+        return None
 
 # --- Web Scraping Function (Using LangChain's WebBaseLoader) ---
 async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]]:

@@ -8,7 +8,6 @@ load_dotenv()
 
 # --- API Keys ---
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-TRACEPARTS_API_KEY = os.getenv("TRACEPARTS_API_KEY")  # Add TraceParts API key
 
 # --- Model Configuration ---
 # Recommend using Langchain's Groq integration if possible
