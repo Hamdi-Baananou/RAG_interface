@@ -711,7 +711,7 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                     max_pages=5  # Limit to 5 pages to avoid excessive crawling
                 ),
                 scraping_strategy=LXMLWebScrapingStrategy(),
-                stream=True,
+                stream=False,  # Changed to False to avoid streaming issues
                 verbose=True
             )
 
@@ -722,16 +722,14 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
 
             # Execute the crawl
             async with AsyncWebCrawler(config=browser_config) as crawler:
-                results = []
-                async for result in await crawler.arun(target_url, config=config):
-                    if result.success and result.content:
-                        results.append(result)
-                        logger.info(f"Found content at depth {result.metadata.get('depth', 0)} with score {result.metadata.get('score', 0):.2f}")
-
-                if results:
+                results = await crawler.arun(target_url, config=config)
+                
+                if results and isinstance(results, list):
                     # Sort results by score and get the best one
                     best_result = max(results, key=lambda r: r.metadata.get('score', 0))
-                    full_page_content = best_result.content
+                    
+                    # Get the page content using the correct attribute
+                    full_page_content = best_result.page_content if hasattr(best_result, 'page_content') else None
                     
                     if full_page_content:
                         logger.info(f"Successfully loaded content from {site_name}. Length: {len(full_page_content)} characters.")
