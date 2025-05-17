@@ -23,6 +23,11 @@ from datetime import datetime, timedelta
 from langchain_community.document_loaders import WebBaseLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 
+from crawl4ai.deep_crawling import BestFirstCrawlingStrategy
+from crawl4ai.deep_crawling.filters import FilterChain, URLPatternFilter, ContentTypeFilter
+from crawl4ai.deep_crawling.scorers import KeywordRelevanceScorer
+from crawl4ai.content_scraping_strategy import LXMLWebScrapingStrategy
+
 # Add TraceParts API configuration
 TRACEPARTS_API_CONFIG = {
     "base_url": "https://api.traceparts.com/v3",
@@ -643,10 +648,10 @@ def clean_scraped_html(html_content: str, site_name: str) -> Optional[str]:
         logger.error(f"Error cleaning HTML for {site_name}: {e}", exc_info=True)
         return None
 
-# --- Web Scraping Function (Using LangChain's WebBaseLoader) ---
+# --- Web Scraping Function (Using Crawl4AI's BestFirstCrawling) ---
 async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]]:
     """
-    Attempts to scrape product data using LangChain's WebBaseLoader.
+    Attempts to scrape product data using Crawl4AI's BestFirstCrawling strategy.
     Returns a dictionary containing both the cleaned text and the source website.
     """
     if not part_number:
@@ -659,15 +664,21 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
     websites = [
         {
             "name": "TraceParts",
-            "url_template": "https://www.traceparts.com/en/product/te-connectivity-plug-assembly-sealed-1-posn?CatalogPath=TRACEPARTS%3ATP09002002001005&Product=10-28072018-063549&PartNumber={part_number}"
+            "url_template": "https://www.traceparts.com/en/search?CatalogPath=&KeepFilters=true&Keywords={part_number}&SearchAction=Keywords",
+            "keywords": ["specification", "technical", "product", "details", "features"],
+            "patterns": ["*product*", "*specification*", "*technical*"]
         },
         {
             "name": "Mouser",
-            "url_template": "https://www.mouser.com/Search/Refine?Keyword={part_number}"
+            "url_template": "https://www.mouser.com/Search/Refine?Keyword={part_number}",
+            "keywords": ["specification", "technical", "product", "details", "features"],
+            "patterns": ["*product*", "*specification*", "*technical*"]
         },
         {
             "name": "TE Connectivity",
-            "url_template": "https://www.te.com/en/product-{part_number}.html"
+            "url_template": "https://www.te.com/en/product-{part_number}.html",
+            "keywords": ["specification", "technical", "product", "details", "features"],
+            "patterns": ["*product*", "*specification*", "*technical*"]
         }
     ]
 
@@ -676,34 +687,72 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
         target_url = site["url_template"].format(part_number=part_number)
         
         try:
-            logger.info(f"Attempting to load content from {site_name}...")
+            logger.info(f"Attempting to crawl {site_name}...")
             
-            # Use WebBaseLoader to fetch and parse the content
-            loader = WebBaseLoader(target_url)
-            docs = loader.load()
-            
-            if docs and docs[0].page_content:
-                # Get the full page content
-                full_page_content = docs[0].page_content
-                logger.info(f"Successfully loaded content from {site_name}. Length: {len(full_page_content)} characters.")
-                
-                # Clean the HTML content
-                cleaned_text = clean_scraped_html(full_page_content, site_name)
-                
-                if cleaned_text:
-                    logger.success(f"Successfully scraped and cleaned data from {site_name}.")
-                    return {
-                        "text": cleaned_text,
-                        "source": site_name,
-                        "url": target_url
-                    }
+            # Create a keyword relevance scorer
+            keyword_scorer = KeywordRelevanceScorer(
+                keywords=site["keywords"],
+                weight=0.7
+            )
+
+            # Create a filter chain
+            filter_chain = FilterChain([
+                URLPatternFilter(patterns=site["patterns"]),
+                ContentTypeFilter(allowed_types=["text/html"])
+            ])
+
+            # Configure the crawler
+            config = CrawlerRunConfig(
+                deep_crawl_strategy=BestFirstCrawlingStrategy(
+                    max_depth=2,
+                    include_external=False,
+                    filter_chain=filter_chain,
+                    url_scorer=keyword_scorer,
+                    max_pages=5  # Limit to 5 pages to avoid excessive crawling
+                ),
+                scraping_strategy=LXMLWebScrapingStrategy(),
+                stream=True,
+                verbose=True
+            )
+
+            browser_config = BrowserConfig(
+                verbose=True,
+                headless=True
+            )
+
+            # Execute the crawl
+            async with AsyncWebCrawler(config=browser_config) as crawler:
+                results = []
+                async for result in await crawler.arun(target_url, config=config):
+                    if result.success and result.content:
+                        results.append(result)
+                        logger.info(f"Found content at depth {result.metadata.get('depth', 0)} with score {result.metadata.get('score', 0):.2f}")
+
+                if results:
+                    # Sort results by score and get the best one
+                    best_result = max(results, key=lambda r: r.metadata.get('score', 0))
+                    full_page_content = best_result.content
+                    
+                    if full_page_content:
+                        logger.info(f"Successfully loaded content from {site_name}. Length: {len(full_page_content)} characters.")
+                        
+                        # Clean the HTML content
+                        cleaned_text = clean_scraped_html(full_page_content, site_name)
+                        
+                        if cleaned_text:
+                            logger.success(f"Successfully scraped and cleaned data from {site_name}.")
+                            return {
+                                "text": cleaned_text,
+                                "source": site_name,
+                                "url": best_result.url
+                            }
+                        else:
+                            logger.warning(f"No cleaned text could be extracted from {site_name}.")
+                    else:
+                        logger.warning(f"Could not find page content in result for {site_name}.")
                 else:
-                    logger.warning(f"No cleaned text could be extracted from {site_name}.")
-            else:
-                logger.warning(f"Could not retrieve content from {site_name}.")
-                
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"Request failed for {site_name} ({target_url}): {e}")
+                    logger.warning(f"No results found for {site_name}.")
+
         except Exception as e:
             logger.error(f"Unexpected error during web scraping for {site_name} ({target_url}): {e}", exc_info=True)
 
