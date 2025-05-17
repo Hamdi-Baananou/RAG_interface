@@ -208,85 +208,108 @@ WEBSITE_CONFIGS = [
             async function scrapeTraceParts() {
                 try {
                     console.log('Starting TraceParts scraping process...');
+                    
                     // Wait for search results to load
-                    console.log('Waiting 5 seconds for search results...');
+                    console.log('Waiting for search results...');
                     await new Promise(r => setTimeout(r, 5000));
                     
                     // Look for search results container
                     const searchResults = document.getElementById('search-results-items');
                     console.log('Search results container found:', !!searchResults);
                     
-                    if (searchResults) {
-                        // Find the card containing the exact part number
-                        const cards = searchResults.querySelectorAll('.card');
-                        console.log('Found ' + cards.length + ' result cards');
-                        
-                        for (const card of cards) {
-                            const partNumberSpan = card.querySelector('.partnumber');
-                            if (partNumberSpan) {
-                                const foundPartNumber = partNumberSpan.textContent.trim();
-                                console.log('Checking part number: ' + foundPartNumber);
+                    if (!searchResults) {
+                        console.log('Search results container not found, waiting longer...');
+                        await new Promise(r => setTimeout(r, 5000));
+                        const searchResults = document.getElementById('search-results-items');
+                        if (!searchResults) {
+                            console.log('Still no search results found after additional wait');
+                            return false;
+                        }
+                    }
+                    
+                    // Find the card containing the exact part number
+                    const cards = searchResults.querySelectorAll('.card');
+                    console.log('Found ' + cards.length + ' result cards');
+                    
+                    let foundMatch = false;
+                    for (const card of cards) {
+                        const partNumberSpan = card.querySelector('.partnumber');
+                        if (partNumberSpan) {
+                            const foundPartNumber = partNumberSpan.textContent.trim();
+                            console.log('Checking part number: ' + foundPartNumber);
+                            
+                            if (foundPartNumber === '{part_number}') {
+                                console.log('Found exact part match, looking for link...');
+                                // Find and click the link
+                                const link = card.querySelector('a.row');
+                                console.log('Link found:', !!link);
                                 
-                                if (foundPartNumber === '{part_number}') {
-                                    console.log('Found exact part match, looking for link...');
-                                    // Find and click the link
-                                    const link = card.querySelector('a.row');
-                                    console.log('Link found:', !!link);
+                                if (link) {
+                                    console.log('Clicking link to product page...');
+                                    link.click();
                                     
-                                    if (link) {
-                                        console.log('Clicking link to product page...');
-                                        link.click();
-                                        // Wait for product page to load
-                                        console.log('Waiting 5 seconds for product page...');
-                                        await new Promise(r => setTimeout(r, 5000));
-                                        
-                                        // Log the current URL to verify navigation
-                                        console.log('Current URL:', window.location.href);
-                                        
-                                        // Try to find and expand any technical data sections
-                                        const expandButtons = document.querySelectorAll('.technical-data-expander, .expander-button, [aria-expanded]');
-                                        console.log('Found ' + expandButtons.length + ' expand buttons');
-                                        
-                                        for (const button of expandButtons) {
-                                            console.log('Button text:', button.textContent);
-                                            console.log('Button aria-expanded:', button.getAttribute('aria-expanded'));
-                                            if (button.getAttribute('aria-expanded') === 'false') {
-                                                console.log('Expanding section...');
-                                                button.click();
-                                                await new Promise(r => setTimeout(r, 1000));
+                                    // Wait for navigation to complete by checking URL
+                                    console.log('Waiting for navigation to complete...');
+                                    await new Promise(r => {
+                                        const i = setInterval(() => {
+                                            if (location.href.includes('{part_number}')) {
+                                                clearInterval(i);
+                                                r();
                                             }
-                                        }
-                                        
-                                        // Try to find and click any 'Technical Data' or 'Specifications' tabs
-                                        const tabs = document.querySelectorAll('.nav-link, .tab-link, [role=tab]');
-                                        console.log('Found ' + tabs.length + ' tabs');
-                                        
-                                        for (const tab of tabs) {
-                                            const tabText = tab.textContent.toLowerCase();
-                                            console.log('Tab text:', tabText);
-                                            if (tabText.includes('technical') || tabText.includes('spec') || tabText.includes('data')) {
-                                                console.log('Clicking technical data tab...');
-                                                tab.click();
-                                                await new Promise(r => setTimeout(r, 2000));
-                                            }
-                                        }
-                                        
-                                        // Log all tables found on the page
-                                        const tables = document.querySelectorAll('table');
-                                        console.log('Found ' + tables.length + ' tables on the page');
-                                        tables.forEach((table, index) => {
-                                            console.log('Table ' + index + ' classes:', table.className);
-                                        });
-                                        
-                                        return true;
+                                        }, 500);
+                                    });
+                                    
+                                    // Additional wait for page load
+                                    await new Promise(r => setTimeout(r, 2000));
+                                    
+                                    // Scroll to make specs visible and trigger AJAX load
+                                    console.log('Scrolling to make specs visible...');
+                                    const specsElement = document.querySelector('.tp-product-specifications');
+                                    if (specsElement) {
+                                        specsElement.scrollIntoView();
+                                        await new Promise(r => setTimeout(r, 1500));
+                                    } else {
+                                        // Fallback scroll if element not found
+                                        window.scrollBy(0, 800);
+                                        await new Promise(r => setTimeout(r, 1500));
                                     }
+                                    
+                                    // Try to find and expand any technical data sections
+                                    const expandButtons = document.querySelectorAll('.technical-data-expander, .expander-button, [aria-expanded]');
+                                    console.log('Found ' + expandButtons.length + ' expand buttons');
+                                    
+                                    for (const button of expandButtons) {
+                                        console.log('Button text:', button.textContent);
+                                        console.log('Button aria-expanded:', button.getAttribute('aria-expanded'));
+                                        if (button.getAttribute('aria-expanded') === 'false') {
+                                            console.log('Expanding section...');
+                                            button.click();
+                                            await new Promise(r => setTimeout(r, 1000));
+                                        }
+                                    }
+                                    
+                                    // Log what we found
+                                    const specsDiv = document.querySelector('.tp-product-specifications');
+                                    console.log('Specifications div found:', !!specsDiv);
+                                    if (specsDiv) {
+                                        const specItems = specsDiv.querySelectorAll('li');
+                                        console.log('Found ' + specItems.length + ' specification items');
+                                    }
+                                    
+                                    foundMatch = true;
+                                    break;
                                 }
                             }
                         }
-                        console.log('No exact part number match found in results');
-                    } else {
-                        console.log('Search results container not found or not loaded yet');
                     }
+                    
+                    if (!foundMatch) {
+                        console.log('No exact part number match found in results');
+                    }
+                    
+                    // Final wait to ensure all content is loaded
+                    await new Promise(r => setTimeout(r, 2000));
+                    
                 } catch (error) {
                     console.error('Error during TraceParts scraping:', error);
                     console.error('Error stack:', error.stack);
@@ -295,7 +318,7 @@ WEBSITE_CONFIGS = [
             }
             scrapeTraceParts();
         """,
-        "table_selector": ".technical-data-table, .product-details-table, .specifications-table, table.table, .table-responsive table, .technical-data-content table, .tab-pane table, .tab-content table, [role=tabpanel] table, table"
+        "table_selector": ".tp-product-specifications, .tp-product-specifications table, [data-testid='specifications'], .technical-data-table, .product-details-table, .specifications-table, table.table, .table-responsive table, .technical-data-content table, .tab-pane table, .tab-content table, [role=tabpanel] table, table"
     },
     {
         "name": "Mouser",
@@ -362,13 +385,6 @@ def clean_scraped_html(html_content: str, site_name: str) -> Optional[str]:
     """
     Parses scraped HTML using BeautifulSoup and extracts key-value pairs
     from known structures for different supplier websites.
-
-    Args:
-        html_content: The raw HTML string scraped from the website.
-        site_name: The name of the site to apply specific parsing logic.
-
-    Returns:
-        A cleaned string representation (e.g., "Key: Value\\nKey: Value") or None if parsing fails.
     """
     if not html_content:
         return None
@@ -379,18 +395,32 @@ def clean_scraped_html(html_content: str, site_name: str) -> Optional[str]:
 
     try:
         if site_name == "TraceParts":
-            # Find all tables with technical data
-            tables = soup.find_all('table', class_=['technical-data-table', 'product-details-table'])
-            for table in tables:
-                rows = table.find_all('tr')
-                for row in rows:
-                    cells = row.find_all(['td', 'th'])
-                    if len(cells) >= 2:
-                        key = cells[0].get_text(strip=True).replace(':', '').strip()
-                        value = cells[1].get_text(strip=True)
-                        if key and value:
-                            extracted_texts.append(f"{key}: {value}")
-            logger.info(f"Extracted {len(extracted_texts)} features from TraceParts HTML.")
+            # First try the new specifications format
+            specs_div = soup.select_one('.tp-product-specifications')
+            if specs_div:
+                for li in specs_div.select('li'):
+                    title = li.select_one('.title')
+                    value = li.select_one('.value')
+                    if title and value:
+                        key = title.get_text(strip=True).replace(':', '').strip()
+                        val = value.get_text(strip=True)
+                        if key and val:
+                            extracted_texts.append(f"{key}: {val}")
+                logger.info(f"Extracted {len(extracted_texts)} features from new TraceParts format.")
+            
+            # If no specs found in new format, try tables as fallback
+            if not extracted_texts:
+                tables = soup.find_all('table', class_=['technical-data-table', 'product-details-table'])
+                for table in tables:
+                    rows = table.find_all('tr')
+                    for row in rows:
+                        cells = row.find_all(['td', 'th'])
+                        if len(cells) >= 2:
+                            key = cells[0].get_text(strip=True).replace(':', '').strip()
+                            value = cells[1].get_text(strip=True)
+                            if key and value:
+                                extracted_texts.append(f"{key}: {value}")
+                logger.info(f"Extracted {len(extracted_texts)} features from TraceParts tables.")
 
         elif site_name == "TE Connectivity":
             # Find all feature list items within the main panel
