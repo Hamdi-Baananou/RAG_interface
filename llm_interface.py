@@ -457,7 +457,7 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
 
     for site_config in WEBSITE_CONFIGS:
         selector = site_config.get("table_selector")
-        site_name = site_config.get("name", "Unknown Site") # Get site name for cleaner
+        site_name = site_config.get("name", "Unknown Site")
         if not selector:
              logger.warning(f"No table_selector defined for {site_name}. Skipping.")
              continue
@@ -466,72 +466,91 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
         js_code = site_config.get("pre_extraction_js")
         logger.debug(f"Attempting scrape on {site_name} ({target_url}) for table selector '{selector}'")
 
-        # Configure crawler run - Use JsonCssExtractionStrategy to get outerHTML
+        # Configure crawler run with more comprehensive extraction strategy
         extraction_schema = {
             "name": "TableHTML",
-            "baseSelector": "html", # Apply to whole document
+            "baseSelector": "html",
             "fields": [
-                # Try type: "html" to get the inner/outer HTML of the element
-                {"name": "html_content", "selector": selector, "type": "html"}
+                # Try multiple approaches to get the content
+                {"name": "html_content", "selector": selector, "type": "html"},
+                {"name": "text_content", "selector": selector, "type": "text"},
+                {"name": "all_tables", "selector": "table", "type": "html"},
+                {"name": "all_divs", "selector": "div.product-details, div.technical-data, div.specifications", "type": "html"},
+                {"name": "page_content", "selector": "body", "type": "text"}
             ]
         }
+
         run_config = CrawlerRunConfig(
-                 cache_mode=CacheMode.BYPASS,
-                 js_code=[js_code] if js_code else None,
-                 page_timeout=20000,
-                 verbose=True, # Enable verbose logging
-                 extraction_strategy=JsonCssExtractionStrategy(extraction_schema) # Add strategy
-            )
+            cache_mode=CacheMode.BYPASS,
+            js_code=[js_code] if js_code else None,
+            page_timeout=30000,  # Increased timeout
+            verbose=True,
+            extraction_strategy=JsonCssExtractionStrategy(extraction_schema)
+        )
+
         browser_config = BrowserConfig(
-            verbose=True, # Enable verbose browser logging
-            headless=True # Use headless mode since we don't have X server
+            verbose=True,
+            headless=True
         )
 
         try:
             async with AsyncWebCrawler(config=browser_config) as crawler:
-                # Pass the single run_config object
                 results = await crawler.arun_many(urls=[target_url], config=run_config)
                 result = results[0]
 
-                # Check for success and extracted content from the strategy
                 if result.success and result.extracted_content:
-                    raw_html = None
                     try:
-                        extracted_data_list = json.loads(result.extracted_content)
-                        if extracted_data_list and isinstance(extracted_data_list, list) and len(extracted_data_list) > 0:
-                            first_item = extracted_data_list[0]
-                            if isinstance(first_item, dict) and "html_content" in first_item:
+                        extracted_data = json.loads(result.extracted_content)
+                        if extracted_data and isinstance(extracted_data, list) and len(extracted_data) > 0:
+                            first_item = extracted_data[0]
+                            
+                            # Log what we found
+                            logger.debug(f"Extracted data from {site_name}:")
+                            for field, value in first_item.items():
+                                if value:
+                                    logger.debug(f"Found {field} with length {len(str(value))}")
+                            
+                            # Try different content sources in order of preference
+                            raw_html = None
+                            if first_item.get("html_content"):
                                 raw_html = str(first_item["html_content"]).strip()
+                            elif first_item.get("all_tables"):
+                                raw_html = str(first_item["all_tables"]).strip()
+                            elif first_item.get("all_divs"):
+                                raw_html = str(first_item["all_divs"]).strip()
+                            elif first_item.get("text_content"):
+                                raw_html = str(first_item["text_content"]).strip()
+                            elif first_item.get("page_content"):
+                                raw_html = str(first_item["page_content"]).strip()
+                            
+                            if raw_html:
+                                cleaned_text = clean_scraped_html(raw_html, site_name)
+                                if cleaned_text:
+                                    logger.success(f"Successfully scraped and cleaned features from {site_name}.")
+                                    return {
+                                        "text": cleaned_text,
+                                        "source": site_name,
+                                        "url": target_url
+                                    }
+                                else:
+                                    logger.warning(f"HTML was scraped from {site_name}, but cleaning failed or yielded no text.")
+                            else:
+                                logger.debug(f"No usable content found in any extraction field for {site_name}.")
                         else:
-                            logger.debug(f"Extraction strategy did not find or extract HTML for selector '{selector}' on {site_name}.")
+                            logger.debug(f"Extraction strategy returned empty data for {site_name}.")
 
                     except json.JSONDecodeError:
-                         logger.warning(f"Failed to parse JSON from crawl4ai extraction result for table HTML on {site_name}: {result.extracted_content[:100]}...")
+                        logger.warning(f"Failed to parse JSON from crawl4ai extraction result for {site_name}: {result.extracted_content[:100]}...")
                     except Exception as parse_error:
-                         logger.error(f"Error processing extracted JSON for {site_name}: {parse_error}", exc_info=True)
-
-                    # --- Pass raw HTML to cleaner --- 
-                    if raw_html:
-                        cleaned_text = clean_scraped_html(raw_html, site_name)
-                        if cleaned_text:
-                            logger.success(f"Successfully scraped and cleaned features table from {site_name}.")
-                            # Return both the cleaned text and the source website
-                            return {
-                                "text": cleaned_text,
-                                "source": site_name,
-                                "url": target_url
-                            }
-                        else:
-                             logger.warning(f"HTML was scraped from {site_name}, but cleaning failed or yielded no text.")
-                    # else: (already logged failure to extract HTML)
+                        logger.error(f"Error processing extracted JSON for {site_name}: {parse_error}", exc_info=True)
 
                 elif result.error_message:
-                     logger.warning(f"Scraping page failed for {site_name} ({target_url}): {result.error_message}")
+                    logger.warning(f"Scraping page failed for {site_name} ({target_url}): {result.error_message}")
                 else:
                     logger.debug(f"Scraping attempt for {site_name} yielded no extracted content or error message.")
 
         except asyncio.TimeoutError:
-             logger.warning(f"Scraping timed out for {site_name} ({target_url})")
+            logger.warning(f"Scraping timed out for {site_name} ({target_url})")
         except Exception as e:
             logger.error(f"Unexpected error during web scraping for {site_name} ({target_url}): {e}", exc_info=True)
 
