@@ -209,7 +209,7 @@ WEBSITE_CONFIGS = [
             "    try {"
             "        console.log('Starting TraceParts scraping process...');"
             "        // Wait for search results to load"
-            "        await new Promise(r => setTimeout(r, 3000));"
+            "        await new Promise(r => setTimeout(r, 5000));"
             "        // Look for search results container"
             "        const searchResults = document.getElementById('search-results-items');"
             "        if (searchResults) {"
@@ -231,7 +231,16 @@ WEBSITE_CONFIGS = [
             "                            console.log('Clicking link to product page...');"
             "                            link.click();"
             "                            // Wait for product page to load"
-            "                            await new Promise(r => setTimeout(r, 3000));"
+            "                            await new Promise(r => setTimeout(r, 5000));"
+            "                            // Try to find and expand any technical data sections"
+            "                            const expandButtons = document.querySelectorAll('.technical-data-expander');"
+            "                            for (const button of expandButtons) {"
+            "                                if (button.getAttribute('aria-expanded') === 'false') {"
+            "                                    console.log('Expanding technical data section...');"
+            "                                    button.click();"
+            "                                    await new Promise(r => setTimeout(r, 1000));"
+            "                                }"
+            "                            }"
             "                            foundMatch = true;"
             "                            break;"
             "                        } else {"
@@ -251,7 +260,7 @@ WEBSITE_CONFIGS = [
             "    }"
             "})();"
         ),
-        "table_selector": ".product-details-table, .specifications-table, table.table, .table-responsive table"
+        "table_selector": ".technical-data-table, .product-details-table, .specifications-table, table.table, .table-responsive table, .technical-data-content table"
     },
     {
         "name": "Mouser",
