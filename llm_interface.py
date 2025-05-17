@@ -311,10 +311,9 @@ def get_answer_from_llm_langchain(question: str, retriever: VectorStoreRetriever
 #         logger.error(f"An unexpected error occurred during LLM request: {e}", exc_info=True)
 #         raise RuntimeError(f"An unexpected error occurred: {e}")
 
-# --- LLM-Free Web Scraping Configuration (Revised for Table HTML) ---
+# --- LLM-Free Web Scraping Configuration (Revised for Full Page) ---
 
 # Configure websites to scrape, in order of preference.
-# We now target the main table/container holding the product features.
 WEBSITE_CONFIGS = [
     {
         "name": "TraceParts",
@@ -411,24 +410,10 @@ WEBSITE_CONFIGS = [
                                         }
                                     }
                                     
-                                    // Log what we found
-                                    const specsDiv = document.querySelector('.tp-product-specifications');
-                                    console.log('Specifications div found:', !!specsDiv);
-                                    if (specsDiv) {
-                                        const specItems = specsDiv.querySelectorAll('li');
-                                        console.log('Found ' + specItems.length + ' specification items');
-                                        if (specItems.length > 0) {
-                                            foundMatch = true;
-                                        }
-                                    }
-                                    
                                     // Final wait to ensure all content is loaded
                                     await new Promise(r => setTimeout(r, 2000));
-                                    
-                                    if (foundMatch) {
-                                        console.log('Successfully found and loaded specifications');
-                                        return true;
-                                    }
+                                    foundMatch = true;
+                                    break;
                                 }
                             }
                         }
@@ -438,6 +423,8 @@ WEBSITE_CONFIGS = [
                         console.log('No exact part number match found in results');
                     }
                     
+                    return foundMatch;
+                    
                 } catch (error) {
                     console.error('Error during TraceParts scraping:', error);
                     console.error('Error stack:', error.stack);
@@ -445,8 +432,7 @@ WEBSITE_CONFIGS = [
                 return false;
             }
             return scrapeTraceParts();
-        """,
-        "table_selector": ".tp-product-specifications, .tp-product-specifications table, [data-testid='specifications'], .technical-data-table, .product-details-table, .specifications-table, table.table, .table-responsive table, .technical-data-content table, .tab-pane table, .tab-content table, [role=tabpanel] table, table"
+        """
     },
     {
         "name": "Mouser",
@@ -469,8 +455,7 @@ WEBSITE_CONFIGS = [
                 }
             }
             scrapeMouser();
-        """,
-        "table_selector": ".product-details-table, .specifications-table"
+        """
     },
     {
         "name": "TE Connectivity",
@@ -479,32 +464,19 @@ WEBSITE_CONFIGS = [
             async function scrapeTE() {
                 try {
                     const expandButtonSelector = '#pdp-features-expander-btn';
-                    const featuresPanelSelector = '#pdp-features-tabpanel';
                     const expandButton = document.querySelector(expandButtonSelector);
-                    const featuresPanel = document.querySelector(featuresPanelSelector);
                     
                     if (expandButton && expandButton.getAttribute('aria-selected') === 'false') {
                         console.log('Features expand button indicates collapsed state, clicking...');
                         expandButton.click();
                         await new Promise(r => setTimeout(r, 1500));
-                        console.log('Expand button clicked and waited.');
-                    } else if (expandButton) {
-                        console.log('Features expand button already indicates expanded state.');
-                    } else {
-                        console.log('Features expand button selector not found:', expandButtonSelector);
-                        if (featuresPanel && !featuresPanel.offsetParent) {
-                            console.warn('Button not found, but panel seems hidden. JS might need adjustment.');
-                        } else if (!featuresPanel) {
-                            console.warn('Neither expand button nor features panel found.');
-                        }
                     }
                 } catch (error) {
                     console.error('Error during TE Connectivity scraping:', error);
                 }
             }
             scrapeTE();
-        """,
-        "table_selector": "#pdp-features-tabpanel"
+        """
     }
 ]
 
@@ -601,10 +573,10 @@ def clean_scraped_html(html_content: str, site_name: str) -> Optional[str]:
         logger.error(f"Error cleaning HTML for {site_name}: {e}", exc_info=True)
         return None # Return None on parsing error
 
-# --- Web Scraping Function (Revised to call cleaner) ---
+# --- Web Scraping Function (Revised for Full Page) ---
 async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]]:
     """
-    Attempts to scrape product data using JsonCssExtractionStrategy.
+    Attempts to scrape product data by getting the full page content after navigation.
     Returns a dictionary containing both the cleaned text and the source website.
     """
     if not part_number:
@@ -618,87 +590,12 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
         target_url = site_config["base_url_template"].format(part_number=part_number)
         js_code = site_config.get("pre_extraction_js")
 
-        # Define extraction schema based on site
-        if site_name == "TraceParts":
-            extraction_schema = {
-                "name": "TraceParts Product Data",
-                "baseSelector": ".tp-product-specifications",
-                "fields": [
-                    {
-                        "name": "specifications",
-                        "selector": "li",
-                        "type": "nested_list",
-                        "fields": [
-                            {
-                                "name": "title",
-                                "selector": ".title",
-                                "type": "text"
-                            },
-                            {
-                                "name": "value",
-                                "selector": ".value",
-                                "type": "text"
-                            }
-                        ]
-                    }
-                ]
-            }
-        elif site_name == "TE Connectivity":
-            extraction_schema = {
-                "name": "TE Connectivity Product Data",
-                "baseSelector": "#pdp-features-tabpanel",
-                "fields": [
-                    {
-                        "name": "features",
-                        "selector": "li.product-feature",
-                        "type": "nested_list",
-                        "fields": [
-                            {
-                                "name": "title",
-                                "selector": "span.feature-title",
-                                "type": "text"
-                            },
-                            {
-                                "name": "value",
-                                "selector": "em.feature-value",
-                                "type": "text"
-                            }
-                        ]
-                    }
-                ]
-            }
-        else:  # Mouser and others
-            extraction_schema = {
-                "name": "Product Specifications",
-                "baseSelector": "table.product-details-table, table.specifications-table",
-                "fields": [
-                    {
-                        "name": "rows",
-                        "selector": "tr",
-                        "type": "nested_list",
-                        "fields": [
-                            {
-                                "name": "key",
-                                "selector": "td:first-child, th:first-child",
-                                "type": "text"
-                            },
-                            {
-                                "name": "value",
-                                "selector": "td:last-child, th:last-child",
-                                "type": "text"
-                            }
-                        ]
-                    }
-                ]
-            }
-
-        # Configure crawler run
+        # Configure crawler run with minimal settings
         run_config = CrawlerRunConfig(
             cache_mode=CacheMode.BYPASS,
             js_code=[js_code] if js_code else None,
             page_timeout=30000,  # 30 second timeout
-            verbose=True,
-            extraction_strategy=JsonCssExtractionStrategy(extraction_schema)
+            verbose=True
         )
 
         browser_config = BrowserConfig(
@@ -711,50 +608,26 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                 results = await crawler.arun_many(urls=[target_url], config=run_config)
                 result = results[0]
 
-                if result.success and result.extracted_content:
-                    try:
-                        extracted_data = json.loads(result.extracted_content)
-                        if extracted_data and isinstance(extracted_data, list) and len(extracted_data) > 0:
-                            first_item = extracted_data[0]
-                            
-                            # Format the extracted data into key-value pairs
-                            formatted_data = []
-                            
-                            if site_name == "TraceParts":
-                                for spec in first_item.get("specifications", []):
-                                    if spec.get("title") and spec.get("value"):
-                                        formatted_data.append(f"{spec['title']}: {spec['value']}")
-                            elif site_name == "TE Connectivity":
-                                for feature in first_item.get("features", []):
-                                    if feature.get("title") and feature.get("value"):
-                                        formatted_data.append(f"{feature['title']}: {feature['value']}")
-                            else:  # Mouser and others
-                                for row in first_item.get("rows", []):
-                                    if row.get("key") and row.get("value"):
-                                        formatted_data.append(f"{row['key']}: {row['value']}")
-                            
-                            if formatted_data:
-                                cleaned_text = "\\n".join(formatted_data)
-                                logger.success(f"Successfully scraped and formatted data from {site_name}.")
-                                return {
-                                    "text": cleaned_text,
-                                    "source": site_name,
-                                    "url": target_url
-                                }
-                            else:
-                                logger.warning(f"No formatted data could be extracted from {site_name}.")
-                        else:
-                            logger.debug(f"Extraction strategy returned empty data for {site_name}.")
-
-                    except json.JSONDecodeError:
-                        logger.warning(f"Failed to parse JSON from crawl4ai extraction result for {site_name}: {result.extracted_content[:100]}...")
-                    except Exception as parse_error:
-                        logger.error(f"Error processing extracted JSON for {site_name}: {parse_error}", exc_info=True)
-
+                if result.success and result.html_content:
+                    # Get the full page content
+                    full_page_content = result.html_content
+                    
+                    # Clean the HTML content
+                    cleaned_text = clean_scraped_html(full_page_content, site_name)
+                    
+                    if cleaned_text:
+                        logger.success(f"Successfully scraped and cleaned data from {site_name}.")
+                        return {
+                            "text": cleaned_text,
+                            "source": site_name,
+                            "url": target_url
+                        }
+                    else:
+                        logger.warning(f"No cleaned text could be extracted from {site_name}.")
                 elif result.error_message:
                     logger.warning(f"Scraping page failed for {site_name} ({target_url}): {result.error_message}")
                 else:
-                    logger.debug(f"Scraping attempt for {site_name} yielded no extracted content or error message.")
+                    logger.debug(f"Scraping attempt for {site_name} yielded no content or error message.")
 
         except asyncio.TimeoutError:
             logger.warning(f"Scraping timed out for {site_name} ({target_url})")
