@@ -202,9 +202,44 @@ def get_answer_from_llm_langchain(question: str, retriever: VectorStoreRetriever
 # We now target the main table/container holding the product features.
 WEBSITE_CONFIGS = [
     {
+        "name": "TraceParts",
+        "base_url_template": "https://www.traceparts.com/en/search?CatalogPath=&KeepFilters=true&Keywords={part_number}&SearchAction=Keywords",
+        "pre_extraction_js": (
+            "(async () => {"
+            "    // Wait for search results to load"
+            "    await new Promise(r => setTimeout(r, 2000));"
+            "    // Click on the first result if found"
+            "    const firstResult = document.querySelector('.search-result-item a');"
+            "    if (firstResult) {"
+            "        console.log('Clicking first search result...');"
+            "        firstResult.click();"
+            "        await new Promise(r => setTimeout(r, 2000));"
+            "    }"
+            "})();"
+        ),
+        "table_selector": ".technical-data-table, .product-details-table"
+    },
+    {
+        "name": "Mouser",
+        "base_url_template": "https://www.mouser.com/Search/Refine?Keyword={part_number}",
+        "pre_extraction_js": (
+            "(async () => {"
+            "    // Wait for search results to load"
+            "    await new Promise(r => setTimeout(r, 2000));"
+            "    // Click on the first result if found"
+            "    const firstResult = document.querySelector('.product-list-item a');"
+            "    if (firstResult) {"
+            "        console.log('Clicking first search result...');"
+            "        firstResult.click();"
+            "        await new Promise(r => setTimeout(r, 2000));"
+            "    }"
+            "})();"
+        ),
+        "table_selector": ".product-details-table, .specifications-table"
+    },
+    {
         "name": "TE Connectivity",
         "base_url_template": "https://www.te.com/en/product-{part_number}.html",
-        # JS to click the features expander button if it's not already expanded
         "pre_extraction_js": (
             "(async () => {"
             "    const expandButtonSelector = '#pdp-features-expander-btn';"
@@ -228,28 +263,19 @@ WEBSITE_CONFIGS = [
             "    }"
             "})();"
         ),
-        # Selector for the main container holding the features/specifications table
-        "table_selector": "#pdp-features-tabpanel" # Example selector - VERIFY!
-    },
-    {
-        "name": "TraceParts",
-        "base_url_template": "https://www.traceparts.com/en/search?CatalogPath=&KeepFilters=true&Keywords={part_number}&SearchAction=Keywords",
-        "pre_extraction_js": None, # Assuming no interaction needed for TraceParts search results page
-        # Selector for the table or div containing technical data on TraceParts
-        "table_selector": ".technical-data" # Example selector - VERIFY!
-    },
-    # Add other supplier websites here following the same structure
+        "table_selector": "#pdp-features-tabpanel"
+    }
 ]
 
 # --- HTML Cleaning Function ---
 def clean_scraped_html(html_content: str, site_name: str) -> Optional[str]:
     """
     Parses scraped HTML using BeautifulSoup and extracts key-value pairs
-    from known structures (e.g., TE Connectivity feature lists).
+    from known structures for different supplier websites.
 
     Args:
         html_content: The raw HTML string scraped from the website.
-        site_name: The name of the site (e.g., "TE Connectivity") to apply specific parsing logic.
+        site_name: The name of the site to apply specific parsing logic.
 
     Returns:
         A cleaned string representation (e.g., "Key: Value\\nKey: Value") or None if parsing fails.
@@ -262,16 +288,29 @@ def clean_scraped_html(html_content: str, site_name: str) -> Optional[str]:
     extracted_texts = []
 
     try:
-        # --- Add site-specific parsing logic here --- 
-        if site_name == "TE Connectivity":
+        if site_name == "TraceParts":
+            # Find all tables with technical data
+            tables = soup.find_all('table', class_=['technical-data-table', 'product-details-table'])
+            for table in tables:
+                rows = table.find_all('tr')
+                for row in rows:
+                    cells = row.find_all(['td', 'th'])
+                    if len(cells) >= 2:
+                        key = cells[0].get_text(strip=True).replace(':', '').strip()
+                        value = cells[1].get_text(strip=True)
+                        if key and value:
+                            extracted_texts.append(f"{key}: {value}")
+            logger.info(f"Extracted {len(extracted_texts)} features from TraceParts HTML.")
+
+        elif site_name == "TE Connectivity":
             # Find all feature list items within the main panel
             feature_items = soup.find_all('li', class_='product-feature')
             if not feature_items:
-                 # Maybe the main selector was wrong? Try finding the panel first
-                 panel = soup.find(id='pdp-features-tabpanel')
-                 if panel:
-                      feature_items = panel.find_all('li', class_='product-feature')
-                 
+                # Maybe the main selector was wrong? Try finding the panel first
+                panel = soup.find(id='pdp-features-tabpanel')
+                if panel:
+                    feature_items = panel.find_all('li', class_='product-feature')
+            
             if feature_items:
                 for item in feature_items:
                     title_span = item.find('span', class_='feature-title')
@@ -283,24 +322,22 @@ def clean_scraped_html(html_content: str, site_name: str) -> Optional[str]:
                             extracted_texts.append(f"{title}: {value}")
                 logger.info(f"Extracted {len(extracted_texts)} features from TE Connectivity HTML.")
             else:
-                 logger.warning(f"Could not find 'li.product-feature' items in the TE Connectivity HTML provided.")
+                logger.warning(f"Could not find 'li.product-feature' items in the TE Connectivity HTML provided.")
 
-        elif site_name == "TraceParts":
-            # Add parsing logic specific to TraceParts HTML structure here
-            # Example: Find a table and extract rows/cells
-            # data_table = soup.find('table', class_='technical-data-table') # Example selector
-            # if data_table:
-            #    for row in data_table.find_all('tr'):
-            #        cells = row.find_all('td') # or 'th'
-            #        if len(cells) == 2:
-            #             key = cells[0].get_text(strip=True).replace(':', '').strip()
-            #             value = cells[1].get_text(strip=True)
-            #             if key and value:
-            #                 extracted_texts.append(f"{key}: {value}")
-            logger.warning(f"HTML cleaning logic for TraceParts is not implemented yet.")
-            pass # Placeholder
+        elif site_name == "Mouser":
+            # Find all tables with product details or specifications
+            tables = soup.find_all('table', class_=['product-details-table', 'specifications-table'])
+            for table in tables:
+                rows = table.find_all('tr')
+                for row in rows:
+                    cells = row.find_all(['td', 'th'])
+                    if len(cells) >= 2:
+                        key = cells[0].get_text(strip=True).replace(':', '').strip()
+                        value = cells[1].get_text(strip=True)
+                        if key and value:
+                            extracted_texts.append(f"{key}: {value}")
+            logger.info(f"Extracted {len(extracted_texts)} features from Mouser HTML.")
 
-        # Add logic for other sites if needed
         else:
             logger.warning(f"No specific HTML cleaning logic defined for site: {site_name}. Returning raw text content as fallback.")
             # Fallback: return just the text content of the whole block
