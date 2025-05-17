@@ -608,9 +608,9 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                 results = await crawler.arun_many(urls=[target_url], config=run_config)
                 result = results[0]
 
-                if result.success and result.html_content:
+                if result.success and result.page_content:
                     # Get the full page content
-                    full_page_content = result.html_content
+                    full_page_content = result.page_content
                     
                     # Clean the HTML content
                     cleaned_text = clean_scraped_html(full_page_content, site_name)
