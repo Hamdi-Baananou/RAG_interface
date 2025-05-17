@@ -17,6 +17,121 @@ import asyncio # Need asyncio for crawl4ai
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 from crawl4ai.extraction_strategy import JsonCssExtractionStrategy
 from bs4 import BeautifulSoup # Import BeautifulSoup
+import aiohttp
+from datetime import datetime, timedelta
+
+# Add TraceParts API configuration
+TRACEPARTS_API_CONFIG = {
+    "base_url": "https://api.traceparts.com/v3",
+    "catalog": "TE_CONNECTIVITY",
+    "api_key": None,  # Will be set from environment
+    "token": None,
+    "token_expiry": None
+}
+
+# Initialize TraceParts API key from config
+TRACEPARTS_API_CONFIG["api_key"] = config.TRACEPARTS_API_KEY
+if not TRACEPARTS_API_CONFIG["api_key"]:
+    logger.warning("TRACEPARTS_API_KEY not found in environment variables. API access will be disabled.")
+
+# Add TraceParts API functions
+async def get_traceparts_token() -> Optional[str]:
+    """Get or refresh the TraceParts API token."""
+    if (TRACEPARTS_API_CONFIG["token"] and TRACEPARTS_API_CONFIG["token_expiry"] and 
+        datetime.now() < TRACEPARTS_API_CONFIG["token_expiry"]):
+        return TRACEPARTS_API_CONFIG["token"]
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{TRACEPARTS_API_CONFIG['base_url']}/auth/token",
+                json={"apiKey": TRACEPARTS_API_CONFIG["api_key"]}
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    TRACEPARTS_API_CONFIG["token"] = data.get("token")
+                    # Set token expiry to 23 hours (giving 1 hour buffer)
+                    TRACEPARTS_API_CONFIG["token_expiry"] = datetime.now() + timedelta(hours=23)
+                    return TRACEPARTS_API_CONFIG["token"]
+                else:
+                    logger.error(f"Failed to get TraceParts token: {response.status}")
+                    return None
+    except Exception as e:
+        logger.error(f"Error getting TraceParts token: {e}")
+        return None
+
+async def get_traceparts_product_data(part_number: str) -> Optional[Dict]:
+    """Get product data from TraceParts API."""
+    token = await get_traceparts_token()
+    if not token:
+        return None
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            headers = {"Authorization": f"Bearer {token}"}
+            params = {
+                "catalog": TRACEPARTS_API_CONFIG["catalog"],
+                "partNumber": part_number
+            }
+            
+            async with session.get(
+                f"{TRACEPARTS_API_CONFIG['base_url']}/product",
+                headers=headers,
+                params=params
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return data
+                elif response.status == 401:
+                    # Token might be expired, try refreshing
+                    TRACEPARTS_API_CONFIG["token"] = None
+                    token = await get_traceparts_token()
+                    if token:
+                        # Retry the request with new token
+                        headers = {"Authorization": f"Bearer {token}"}
+                        async with session.get(
+                            f"{TRACEPARTS_API_CONFIG['base_url']}/product",
+                            headers=headers,
+                            params=params
+                        ) as retry_response:
+                            if retry_response.status == 200:
+                                data = await retry_response.json()
+                                return data
+                logger.error(f"Failed to get TraceParts product data: {response.status}")
+                return None
+    except Exception as e:
+        logger.error(f"Error getting TraceParts product data: {e}")
+        return None
+
+def format_traceparts_data(product_data: Dict) -> str:
+    """Format TraceParts API response into key-value pairs."""
+    if not product_data:
+        return None
+    
+    extracted_texts = []
+    
+    # Extract basic product information
+    if "product" in product_data:
+        product = product_data["product"]
+        
+        # Add basic properties
+        for key, value in product.items():
+            if isinstance(value, (str, int, float, bool)):
+                extracted_texts.append(f"{key}: {value}")
+        
+        # Add specifications if available
+        if "specifications" in product:
+            for spec in product["specifications"]:
+                if "name" in spec and "value" in spec:
+                    extracted_texts.append(f"{spec['name']}: {spec['value']}")
+        
+        # Add features if available
+        if "features" in product:
+            for feature in product["features"]:
+                if isinstance(feature, dict) and "name" in feature:
+                    extracted_texts.append(f"Feature: {feature['name']}")
+    
+    return "\\n".join(extracted_texts) if extracted_texts else None
 
 # --- Initialize LLM ---
 @logger.catch(reraise=True) # Keep catch for unexpected errors during init
@@ -250,28 +365,36 @@ WEBSITE_CONFIGS = [
                                     
                                     // Wait for navigation to complete by checking URL
                                     console.log('Waiting for navigation to complete...');
+                                    let navigationComplete = false;
                                     await new Promise(r => {
                                         const i = setInterval(() => {
                                             if (location.href.includes('{part_number}')) {
                                                 clearInterval(i);
+                                                navigationComplete = true;
                                                 r();
                                             }
                                         }, 500);
                                     });
                                     
+                                    if (!navigationComplete) {
+                                        console.log('Navigation did not complete successfully');
+                                        return false;
+                                    }
+                                    
                                     // Additional wait for page load
-                                    await new Promise(r => setTimeout(r, 2000));
+                                    console.log('Waiting for page load...');
+                                    await new Promise(r => setTimeout(r, 3000));
                                     
                                     // Scroll to make specs visible and trigger AJAX load
                                     console.log('Scrolling to make specs visible...');
                                     const specsElement = document.querySelector('.tp-product-specifications');
                                     if (specsElement) {
-                                        specsElement.scrollIntoView();
-                                        await new Promise(r => setTimeout(r, 1500));
+                                        specsElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                        await new Promise(r => setTimeout(r, 2000));
                                     } else {
                                         // Fallback scroll if element not found
                                         window.scrollBy(0, 800);
-                                        await new Promise(r => setTimeout(r, 1500));
+                                        await new Promise(r => setTimeout(r, 2000));
                                     }
                                     
                                     // Try to find and expand any technical data sections
@@ -294,10 +417,18 @@ WEBSITE_CONFIGS = [
                                     if (specsDiv) {
                                         const specItems = specsDiv.querySelectorAll('li');
                                         console.log('Found ' + specItems.length + ' specification items');
+                                        if (specItems.length > 0) {
+                                            foundMatch = true;
+                                        }
                                     }
                                     
-                                    foundMatch = true;
-                                    break;
+                                    // Final wait to ensure all content is loaded
+                                    await new Promise(r => setTimeout(r, 2000));
+                                    
+                                    if (foundMatch) {
+                                        console.log('Successfully found and loaded specifications');
+                                        return true;
+                                    }
                                 }
                             }
                         }
@@ -307,16 +438,13 @@ WEBSITE_CONFIGS = [
                         console.log('No exact part number match found in results');
                     }
                     
-                    // Final wait to ensure all content is loaded
-                    await new Promise(r => setTimeout(r, 2000));
-                    
                 } catch (error) {
                     console.error('Error during TraceParts scraping:', error);
                     console.error('Error stack:', error.stack);
                 }
                 return false;
             }
-            scrapeTraceParts();
+            return scrapeTraceParts();
         """,
         "table_selector": ".tp-product-specifications, .tp-product-specifications table, [data-testid='specifications'], .technical-data-table, .product-details-table, .specifications-table, table.table, .table-responsive table, .technical-data-content table, .tab-pane table, .tab-content table, [role=tabpanel] table, table"
     },
@@ -476,44 +604,99 @@ def clean_scraped_html(html_content: str, site_name: str) -> Optional[str]:
 # --- Web Scraping Function (Revised to call cleaner) ---
 async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]]:
     """
-    Attempts to scrape the outer HTML of a features table, then cleans it.
+    Attempts to scrape product data using JsonCssExtractionStrategy.
     Returns a dictionary containing both the cleaned text and the source website.
     """
     if not part_number:
         logger.debug("Web scraping skipped: No part number provided.")
         return None
 
-    logger.info(f"Attempting web scrape for features table / Part#: '{part_number}'...")
+    logger.info(f"Attempting web scrape for part number: '{part_number}'...")
 
     for site_config in WEBSITE_CONFIGS:
-        selector = site_config.get("table_selector")
         site_name = site_config.get("name", "Unknown Site")
-        if not selector:
-             logger.warning(f"No table_selector defined for {site_name}. Skipping.")
-             continue
-
         target_url = site_config["base_url_template"].format(part_number=part_number)
         js_code = site_config.get("pre_extraction_js")
-        logger.debug(f"Attempting scrape on {site_name} ({target_url}) for table selector '{selector}'")
 
-        # Configure crawler run with more comprehensive extraction strategy
-        extraction_schema = {
-            "name": "TableHTML",
-            "baseSelector": "html",
-            "fields": [
-                # Try multiple approaches to get the content
-                {"name": "html_content", "selector": selector, "type": "html"},
-                {"name": "text_content", "selector": selector, "type": "text"},
-                {"name": "all_tables", "selector": "table", "type": "html"},
-                {"name": "all_divs", "selector": "div.product-details, div.technical-data, div.specifications", "type": "html"},
-                {"name": "page_content", "selector": "body", "type": "text"}
-            ]
-        }
+        # Define extraction schema based on site
+        if site_name == "TraceParts":
+            extraction_schema = {
+                "name": "TraceParts Product Data",
+                "baseSelector": ".tp-product-specifications",
+                "fields": [
+                    {
+                        "name": "specifications",
+                        "selector": "li",
+                        "type": "nested_list",
+                        "fields": [
+                            {
+                                "name": "title",
+                                "selector": ".title",
+                                "type": "text"
+                            },
+                            {
+                                "name": "value",
+                                "selector": ".value",
+                                "type": "text"
+                            }
+                        ]
+                    }
+                ]
+            }
+        elif site_name == "TE Connectivity":
+            extraction_schema = {
+                "name": "TE Connectivity Product Data",
+                "baseSelector": "#pdp-features-tabpanel",
+                "fields": [
+                    {
+                        "name": "features",
+                        "selector": "li.product-feature",
+                        "type": "nested_list",
+                        "fields": [
+                            {
+                                "name": "title",
+                                "selector": "span.feature-title",
+                                "type": "text"
+                            },
+                            {
+                                "name": "value",
+                                "selector": "em.feature-value",
+                                "type": "text"
+                            }
+                        ]
+                    }
+                ]
+            }
+        else:  # Mouser and others
+            extraction_schema = {
+                "name": "Product Specifications",
+                "baseSelector": "table.product-details-table, table.specifications-table",
+                "fields": [
+                    {
+                        "name": "rows",
+                        "selector": "tr",
+                        "type": "nested_list",
+                        "fields": [
+                            {
+                                "name": "key",
+                                "selector": "td:first-child, th:first-child",
+                                "type": "text"
+                            },
+                            {
+                                "name": "value",
+                                "selector": "td:last-child, th:last-child",
+                                "type": "text"
+                            }
+                        ]
+                    }
+                ]
+            }
 
+        # Configure crawler run
         run_config = CrawlerRunConfig(
             cache_mode=CacheMode.BYPASS,
             js_code=[js_code] if js_code else None,
-            page_timeout=30000,  # Increased timeout
+            page_timeout=30000,  # 30 second timeout
             verbose=True,
             extraction_strategy=JsonCssExtractionStrategy(extraction_schema)
         )
@@ -534,38 +717,32 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                         if extracted_data and isinstance(extracted_data, list) and len(extracted_data) > 0:
                             first_item = extracted_data[0]
                             
-                            # Log what we found
-                            logger.debug(f"Extracted data from {site_name}:")
-                            for field, value in first_item.items():
-                                if value:
-                                    logger.debug(f"Found {field} with length {len(str(value))}")
+                            # Format the extracted data into key-value pairs
+                            formatted_data = []
                             
-                            # Try different content sources in order of preference
-                            raw_html = None
-                            if first_item.get("html_content"):
-                                raw_html = str(first_item["html_content"]).strip()
-                            elif first_item.get("all_tables"):
-                                raw_html = str(first_item["all_tables"]).strip()
-                            elif first_item.get("all_divs"):
-                                raw_html = str(first_item["all_divs"]).strip()
-                            elif first_item.get("text_content"):
-                                raw_html = str(first_item["text_content"]).strip()
-                            elif first_item.get("page_content"):
-                                raw_html = str(first_item["page_content"]).strip()
+                            if site_name == "TraceParts":
+                                for spec in first_item.get("specifications", []):
+                                    if spec.get("title") and spec.get("value"):
+                                        formatted_data.append(f"{spec['title']}: {spec['value']}")
+                            elif site_name == "TE Connectivity":
+                                for feature in first_item.get("features", []):
+                                    if feature.get("title") and feature.get("value"):
+                                        formatted_data.append(f"{feature['title']}: {feature['value']}")
+                            else:  # Mouser and others
+                                for row in first_item.get("rows", []):
+                                    if row.get("key") and row.get("value"):
+                                        formatted_data.append(f"{row['key']}: {row['value']}")
                             
-                            if raw_html:
-                                cleaned_text = clean_scraped_html(raw_html, site_name)
-                                if cleaned_text:
-                                    logger.success(f"Successfully scraped and cleaned features from {site_name}.")
-                                    return {
-                                        "text": cleaned_text,
-                                        "source": site_name,
-                                        "url": target_url
-                                    }
-                                else:
-                                    logger.warning(f"HTML was scraped from {site_name}, but cleaning failed or yielded no text.")
+                            if formatted_data:
+                                cleaned_text = "\\n".join(formatted_data)
+                                logger.success(f"Successfully scraped and formatted data from {site_name}.")
+                                return {
+                                    "text": cleaned_text,
+                                    "source": site_name,
+                                    "url": target_url
+                                }
                             else:
-                                logger.debug(f"No usable content found in any extraction field for {site_name}.")
+                                logger.warning(f"No formatted data could be extracted from {site_name}.")
                         else:
                             logger.debug(f"Extraction strategy returned empty data for {site_name}.")
 
@@ -584,7 +761,7 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
         except Exception as e:
             logger.error(f"Unexpected error during web scraping for {site_name} ({target_url}): {e}", exc_info=True)
 
-    logger.info(f"Web scraping finished for features table. No usable cleaned text found across configured sites.")
+    logger.info(f"Web scraping finished. No usable data found across configured sites.")
     return None
 
 
