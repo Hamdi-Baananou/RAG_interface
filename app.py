@@ -455,11 +455,13 @@ else:
 
         # --- Block 1a: Scrape Web Table HTML (if needed) --- 
         scraped_table_html = None # Initialize
+        scraped_source = None # Initialize source tracking
         if part_number: # Only scrape if part number is provided
             # Check cache first
             if st.session_state.current_part_number_scraped == part_number and st.session_state.scraped_table_html_cache is not None:
                  logger.info(f"Using cached scraped HTML for part number {part_number}.")
-                 scraped_table_html = st.session_state.scraped_table_html_cache
+                 scraped_table_html = st.session_state.scraped_table_html_cache.get("text")
+                 scraped_source = st.session_state.scraped_table_html_cache.get("source")
             else:
                  # Scrape and update cache
                  logger.info(f"Part number {part_number} changed or not cached. Attempting web scrape...")
@@ -468,16 +470,21 @@ else:
                      try:
                           # Ensure scrape_website_table_html is imported from llm_interface
                           from llm_interface import scrape_website_table_html
-                          scraped_table_html = loop.run_until_complete(scrape_website_table_html(part_number))
+                          scrape_result = loop.run_until_complete(scrape_website_table_html(part_number))
                           scrape_time = time.time() - scrape_start_time
-                          if scraped_table_html:
+                          if scrape_result:
+                              scraped_table_html = scrape_result.get("text")
+                              scraped_source = scrape_result.get("source")
+                              scraped_url = scrape_result.get("url")
                               logger.success(f"Web scraping successful in {scrape_time:.2f} seconds.")
-                              st.caption(f"ℹ️ Found web data for part# {part_number}. Will prioritize.")
+                              st.caption(f"ℹ️ Found web data for part# {part_number} from {scraped_source}. Will prioritize.")
+                              if scraped_url:
+                                  st.caption(f"🔗 Source URL: {scraped_url}")
                           else:
                               logger.warning(f"Web scraping attempted but failed to find table HTML in {scrape_time:.2f} seconds.")
                               st.caption(f"⚠️ Web scraping failed for part# {part_number}, using PDF data only.")
                           # Update cache
-                          st.session_state.scraped_table_html_cache = scraped_table_html
+                          st.session_state.scraped_table_html_cache = scrape_result
                           st.session_state.current_part_number_scraped = part_number
                      except Exception as scrape_e:
                           scrape_time = time.time() - scrape_start_time
@@ -496,10 +503,13 @@ else:
 
         # --- Log the result of scraping before Stage 1 --- 
         logger.debug(f"Cleaned Scraped HTML content passed to Stage 1: {scraped_table_html[:500] if scraped_table_html else 'None'}...")
+        logger.debug(f"Source website: {scraped_source if scraped_source else 'None'}...")
         # -------------------------------------------------
 
         # --- Block 1b: Two-Stage Extraction Logic --- 
         st.info(f"Running Stage 1 (Web Data Extraction) for {len(prompts_to_run)} attributes...")
+        if scraped_source:
+            st.caption(f"📊 Using data from: {scraped_source}")
         
         cols = st.columns(2) # For displaying progress
         col_index = 0

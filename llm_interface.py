@@ -354,9 +354,10 @@ def clean_scraped_html(html_content: str, site_name: str) -> Optional[str]:
         return None # Return None on parsing error
 
 # --- Web Scraping Function (Revised to call cleaner) ---
-async def scrape_website_table_html(part_number: str) -> Optional[str]:
+async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]]:
     """
     Attempts to scrape the outer HTML of a features table, then cleans it.
+    Returns a dictionary containing both the cleaned text and the source website.
     """
     if not part_number:
         logger.debug("Web scraping skipped: No part number provided.")
@@ -421,7 +422,12 @@ async def scrape_website_table_html(part_number: str) -> Optional[str]:
                         cleaned_text = clean_scraped_html(raw_html, site_name)
                         if cleaned_text:
                             logger.success(f"Successfully scraped and cleaned features table from {site_name}.")
-                            return cleaned_text # Return the cleaned text
+                            # Return both the cleaned text and the source website
+                            return {
+                                "text": cleaned_text,
+                                "source": site_name,
+                                "url": target_url
+                            }
                         else:
                              logger.warning(f"HTML was scraped from {site_name}, but cleaning failed or yielded no text.")
                     # else: (already logged failure to extract HTML)
