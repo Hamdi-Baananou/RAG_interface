@@ -204,135 +204,155 @@ WEBSITE_CONFIGS = [
     {
         "name": "TraceParts",
         "base_url_template": "https://www.traceparts.com/en/search?CatalogPath=&KeepFilters=true&Keywords={part_number}&SearchAction=Keywords",
-        "pre_extraction_js": (
-            "(async () => {"
-            "    try {"
-            "        console.log('Starting TraceParts scraping process...');"
-            "        // Wait for search results to load"
-            "        console.log('Waiting 5 seconds for search results...');"
-            "        await new Promise(r => setTimeout(r, 5000));"
-            "        // Look for search results container"
-            "        const searchResults = document.getElementById('search-results-items');"
-            "        console.log('Search results container found:', !!searchResults);"
-            "        if (searchResults) {"
-            "            // Find the card containing the exact part number"
-            "            const cards = searchResults.querySelectorAll('.card');"
-            "            console.log('Found ' + cards.length + ' result cards');"
-            "            let foundMatch = false;"
-            "            for (const card of cards) {"
-            "                const partNumberSpan = card.querySelector('.partnumber');"
-            "                if (partNumberSpan) {"
-            "                    const foundPartNumber = partNumberSpan.textContent.trim();"
-            "                    console.log('Checking part number: ' + foundPartNumber);"
-            "                    if (foundPartNumber === '" + "{part_number}" + "') {"
-            "                        console.log('Found exact part match, looking for link...');"
-            "                        // Find and click the link"
-            "                        const link = card.querySelector('a.row');"
-            "                        console.log('Link found:', !!link);"
-            "                        if (link) {"
-            "                            console.log('Clicking link to product page...');"
-            "                            link.click();"
-            "                            // Wait for product page to load"
-            "                            console.log('Waiting 5 seconds for product page...');"
-            "                            await new Promise(r => setTimeout(r, 5000));"
-            "                            // Log the current URL to verify navigation"
-            "                            console.log('Current URL:', window.location.href);"
-            "                            // Try to find and expand any technical data sections"
-            "                            const expandButtons = document.querySelectorAll('.technical-data-expander, .expander-button, [aria-expanded]');"
-            "                            console.log('Found ' + expandButtons.length + ' expand buttons');"
-            "                            for (const button of expandButtons) {"
-            "                                console.log('Button text:', button.textContent);"
-            "                                console.log('Button aria-expanded:', button.getAttribute('aria-expanded'));"
-            "                                if (button.getAttribute('aria-expanded') === 'false') {"
-            "                                    console.log('Expanding section...');"
-            "                                    button.click();"
-            "                                    await new Promise(r => setTimeout(r, 1000));"
-            "                                }"
-            "                            }"
-            "                            // Try to find and click any 'Technical Data' or 'Specifications' tabs"
-            "                            const tabs = document.querySelectorAll('.nav-link, .tab-link, [role=tab]');"
-            "                            console.log('Found ' + tabs.length + ' tabs');"
-            "                            for (const tab of tabs) {"
-            "                                const tabText = tab.textContent.toLowerCase();"
-            "                                console.log('Tab text:', tabText);"
-            "                                if (tabText.includes('technical') || tabText.includes('spec') || tabText.includes('data')) {"
-            "                                    console.log('Clicking technical data tab...');"
-            "                                    tab.click();"
-            "                                    await new Promise(r => setTimeout(r, 2000));"
-            "                                }"
-            "                            }"
-            "                            // Log all tables found on the page"
-            "                            const tables = document.querySelectorAll('table');"
-            "                            console.log('Found ' + tables.length + ' tables on the page');"
-            "                            tables.forEach((table, index) => {"
-            "                                console.log('Table ' + index + ' classes:', table.className);"
-            "                            });"
-            "                            foundMatch = true;"
-            "                            break;"
-            "                        } else {"
-            "                            console.log('Could not find link in matching card');"
-            "                        }"
-            "                    }"
-            "                }"
-            "            }"
-            "            if (!foundMatch) {"
-            "                console.log('No exact part number match found in results');"
-            "            }"
-            "        } else {"
-            "            console.log('Search results container not found or not loaded yet');"
-            "        }"
-            "    } catch (error) {"
-            "        console.error('Error during TraceParts scraping:', error);"
-            "        console.error('Error stack:', error.stack);"
-            "    }"
-            "})();"
-        ),
+        "pre_extraction_js": """
+            async function scrapeTraceParts() {
+                try {
+                    console.log('Starting TraceParts scraping process...');
+                    // Wait for search results to load
+                    console.log('Waiting 5 seconds for search results...');
+                    await new Promise(r => setTimeout(r, 5000));
+                    
+                    // Look for search results container
+                    const searchResults = document.getElementById('search-results-items');
+                    console.log('Search results container found:', !!searchResults);
+                    
+                    if (searchResults) {
+                        // Find the card containing the exact part number
+                        const cards = searchResults.querySelectorAll('.card');
+                        console.log('Found ' + cards.length + ' result cards');
+                        
+                        for (const card of cards) {
+                            const partNumberSpan = card.querySelector('.partnumber');
+                            if (partNumberSpan) {
+                                const foundPartNumber = partNumberSpan.textContent.trim();
+                                console.log('Checking part number: ' + foundPartNumber);
+                                
+                                if (foundPartNumber === '{part_number}') {
+                                    console.log('Found exact part match, looking for link...');
+                                    // Find and click the link
+                                    const link = card.querySelector('a.row');
+                                    console.log('Link found:', !!link);
+                                    
+                                    if (link) {
+                                        console.log('Clicking link to product page...');
+                                        link.click();
+                                        // Wait for product page to load
+                                        console.log('Waiting 5 seconds for product page...');
+                                        await new Promise(r => setTimeout(r, 5000));
+                                        
+                                        // Log the current URL to verify navigation
+                                        console.log('Current URL:', window.location.href);
+                                        
+                                        // Try to find and expand any technical data sections
+                                        const expandButtons = document.querySelectorAll('.technical-data-expander, .expander-button, [aria-expanded]');
+                                        console.log('Found ' + expandButtons.length + ' expand buttons');
+                                        
+                                        for (const button of expandButtons) {
+                                            console.log('Button text:', button.textContent);
+                                            console.log('Button aria-expanded:', button.getAttribute('aria-expanded'));
+                                            if (button.getAttribute('aria-expanded') === 'false') {
+                                                console.log('Expanding section...');
+                                                button.click();
+                                                await new Promise(r => setTimeout(r, 1000));
+                                            }
+                                        }
+                                        
+                                        // Try to find and click any 'Technical Data' or 'Specifications' tabs
+                                        const tabs = document.querySelectorAll('.nav-link, .tab-link, [role=tab]');
+                                        console.log('Found ' + tabs.length + ' tabs');
+                                        
+                                        for (const tab of tabs) {
+                                            const tabText = tab.textContent.toLowerCase();
+                                            console.log('Tab text:', tabText);
+                                            if (tabText.includes('technical') || tabText.includes('spec') || tabText.includes('data')) {
+                                                console.log('Clicking technical data tab...');
+                                                tab.click();
+                                                await new Promise(r => setTimeout(r, 2000));
+                                            }
+                                        }
+                                        
+                                        // Log all tables found on the page
+                                        const tables = document.querySelectorAll('table');
+                                        console.log('Found ' + tables.length + ' tables on the page');
+                                        tables.forEach((table, index) => {
+                                            console.log('Table ' + index + ' classes:', table.className);
+                                        });
+                                        
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        console.log('No exact part number match found in results');
+                    } else {
+                        console.log('Search results container not found or not loaded yet');
+                    }
+                } catch (error) {
+                    console.error('Error during TraceParts scraping:', error);
+                    console.error('Error stack:', error.stack);
+                }
+                return false;
+            }
+            scrapeTraceParts();
+        """,
         "table_selector": ".technical-data-table, .product-details-table, .specifications-table, table.table, .table-responsive table, .technical-data-content table, .tab-pane table, .tab-content table, [role=tabpanel] table, table"
     },
     {
         "name": "Mouser",
         "base_url_template": "https://www.mouser.com/Search/Refine?Keyword={part_number}",
-        "pre_extraction_js": (
-            "(async () => {"
-            "    // Wait for search results to load"
-            "    await new Promise(r => setTimeout(r, 2000));"
-            "    // Click on the first result if found"
-            "    const firstResult = document.querySelector('.product-list-item a');"
-            "    if (firstResult) {"
-            "        console.log('Clicking first search result...');"
-            "        firstResult.click();"
-            "        await new Promise(r => setTimeout(r, 2000));"
-            "    }"
-            "})();"
-        ),
+        "pre_extraction_js": """
+            async function scrapeMouser() {
+                try {
+                    // Wait for search results to load
+                    await new Promise(r => setTimeout(r, 2000));
+                    
+                    // Click on the first result if found
+                    const firstResult = document.querySelector('.product-list-item a');
+                    if (firstResult) {
+                        console.log('Clicking first search result...');
+                        firstResult.click();
+                        await new Promise(r => setTimeout(r, 2000));
+                    }
+                } catch (error) {
+                    console.error('Error during Mouser scraping:', error);
+                }
+            }
+            scrapeMouser();
+        """,
         "table_selector": ".product-details-table, .specifications-table"
     },
     {
         "name": "TE Connectivity",
         "base_url_template": "https://www.te.com/en/product-{part_number}.html",
-        "pre_extraction_js": (
-            "(async () => {"
-            "    const expandButtonSelector = '#pdp-features-expander-btn';"
-            "    const featuresPanelSelector = '#pdp-features-tabpanel';"
-            "    const expandButton = document.querySelector(expandButtonSelector);"
-            "    const featuresPanel = document.querySelector(featuresPanelSelector);"
-            "    if (expandButton && expandButton.getAttribute('aria-selected') === 'false') {"
-            "        console.log('Features expand button indicates collapsed state, clicking...');"
-            "        expandButton.click();"
-            "        await new Promise(r => setTimeout(r, 1500));"
-            "        console.log('Expand button clicked and waited.');"
-            "    } else if (expandButton) {"
-            "        console.log('Features expand button already indicates expanded state.');"
-            "    } else {"
-            "        console.log('Features expand button selector not found:', expandButtonSelector);"
-            "        if (featuresPanel && !featuresPanel.offsetParent) {"
-            "           console.warn('Button not found, but panel seems hidden. JS might need adjustment.');"
-            "        } else if (!featuresPanel) {"
-            "           console.warn('Neither expand button nor features panel found.');"
-            "        }"
-            "    }"
-            "})();"
-        ),
+        "pre_extraction_js": """
+            async function scrapeTE() {
+                try {
+                    const expandButtonSelector = '#pdp-features-expander-btn';
+                    const featuresPanelSelector = '#pdp-features-tabpanel';
+                    const expandButton = document.querySelector(expandButtonSelector);
+                    const featuresPanel = document.querySelector(featuresPanelSelector);
+                    
+                    if (expandButton && expandButton.getAttribute('aria-selected') === 'false') {
+                        console.log('Features expand button indicates collapsed state, clicking...');
+                        expandButton.click();
+                        await new Promise(r => setTimeout(r, 1500));
+                        console.log('Expand button clicked and waited.');
+                    } else if (expandButton) {
+                        console.log('Features expand button already indicates expanded state.');
+                    } else {
+                        console.log('Features expand button selector not found:', expandButtonSelector);
+                        if (featuresPanel && !featuresPanel.offsetParent) {
+                            console.warn('Button not found, but panel seems hidden. JS might need adjustment.');
+                        } else if (!featuresPanel) {
+                            console.warn('Neither expand button nor features panel found.');
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error during TE Connectivity scraping:', error);
+                }
+            }
+            scrapeTE();
+        """,
         "table_selector": "#pdp-features-tabpanel"
     }
 ]
