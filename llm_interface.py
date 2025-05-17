@@ -725,14 +725,29 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                 results = await crawler.arun(target_url, config=config)
                 
                 if results and isinstance(results, list):
+                    # Log all available attributes of the first result for debugging
+                    if results:
+                        first_result = results[0]
+                        logger.debug(f"First result attributes: {dir(first_result)}")
+                        logger.debug(f"First result metadata: {first_result.metadata}")
+                    
                     # Sort results by score and get the best one
                     best_result = max(results, key=lambda r: r.metadata.get('score', 0))
                     
-                    # Get the page content using the correct attribute
-                    full_page_content = best_result.page_content if hasattr(best_result, 'page_content') else None
+                    # Try multiple ways to get the content
+                    full_page_content = None
+                    if hasattr(best_result, 'page_content'):
+                        full_page_content = best_result.page_content
+                    elif hasattr(best_result, 'html_content'):
+                        full_page_content = best_result.html_content
+                    elif hasattr(best_result, 'content'):
+                        full_page_content = best_result.content
+                    elif hasattr(best_result, 'text'):
+                        full_page_content = best_result.text
                     
                     if full_page_content:
                         logger.info(f"Successfully loaded content from {site_name}. Length: {len(full_page_content)} characters.")
+                        logger.debug(f"Content preview: {full_page_content[:500]}...")
                         
                         # Clean the HTML content
                         cleaned_text = clean_scraped_html(full_page_content, site_name)
@@ -747,7 +762,7 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                         else:
                             logger.warning(f"No cleaned text could be extracted from {site_name}.")
                     else:
-                        logger.warning(f"Could not find page content in result for {site_name}.")
+                        logger.warning(f"Could not find page content in result for {site_name}. Available attributes: {dir(best_result)}")
                 else:
                     logger.warning(f"No results found for {site_name}.")
 
