@@ -20,6 +20,9 @@ from bs4 import BeautifulSoup # Import BeautifulSoup
 import aiohttp
 from datetime import datetime, timedelta
 
+from langchain_community.document_loaders import WebBaseLoader
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+
 # Add TraceParts API configuration
 TRACEPARTS_API_CONFIG = {
     "base_url": "https://api.traceparts.com/v3",
@@ -573,10 +576,10 @@ def clean_scraped_html(html_content: str, site_name: str) -> Optional[str]:
         logger.error(f"Error cleaning HTML for {site_name}: {e}", exc_info=True)
         return None # Return None on parsing error
 
-# --- Web Scraping Function (Revised for Full Page) ---
+# --- Web Scraping Function (Using LangChain's WebBaseLoader) ---
 async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]]:
     """
-    Attempts to scrape product data by getting the full page content after navigation.
+    Attempts to scrape product data using LangChain's WebBaseLoader.
     Returns a dictionary containing both the cleaned text and the source website.
     """
     if not part_number:
@@ -585,63 +588,55 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
 
     logger.info(f"Attempting web scrape for part number: '{part_number}'...")
 
-    for site_config in WEBSITE_CONFIGS:
-        site_name = site_config.get("name", "Unknown Site")
-        target_url = site_config["base_url_template"].format(part_number=part_number)
-        js_code = site_config.get("pre_extraction_js")
+    # Configure websites to try, in order of preference
+    websites = [
+        {
+            "name": "TraceParts",
+            "url_template": "https://www.traceparts.com/en/product/te-connectivity-plug-assembly-sealed-1-posn?CatalogPath=TRACEPARTS%3ATP09002002001005&Product=10-28072018-063549&PartNumber={part_number}"
+        },
+        {
+            "name": "Mouser",
+            "url_template": "https://www.mouser.com/Search/Refine?Keyword={part_number}"
+        },
+        {
+            "name": "TE Connectivity",
+            "url_template": "https://www.te.com/en/product-{part_number}.html"
+        }
+    ]
 
-        # Configure crawler run with minimal settings
-        run_config = CrawlerRunConfig(
-            cache_mode=CacheMode.BYPASS,
-            js_code=[js_code] if js_code else None,
-            page_timeout=30000,  # 30 second timeout
-            verbose=True
-        )
-
-        browser_config = BrowserConfig(
-            verbose=True,
-            headless=True
-        )
-
+    for site in websites:
+        site_name = site["name"]
+        target_url = site["url_template"].format(part_number=part_number)
+        
         try:
-            async with AsyncWebCrawler(config=browser_config) as crawler:
-                results = await crawler.arun_many(urls=[target_url], config=run_config)
-                result = results[0]
-
-                if result.success:
-                    # Get the full page content - try different possible attributes
-                    full_page_content = None
-                    if hasattr(result, 'content'):
-                        full_page_content = result.content
-                    elif hasattr(result, 'text'):
-                        full_page_content = result.text
-                    elif hasattr(result, 'html'):
-                        full_page_content = result.html
-                    elif hasattr(result, 'body'):
-                        full_page_content = result.body
-                    
-                    if full_page_content:
-                        # Clean the HTML content
-                        cleaned_text = clean_scraped_html(full_page_content, site_name)
-                        
-                        if cleaned_text:
-                            logger.success(f"Successfully scraped and cleaned data from {site_name}.")
-                            return {
-                                "text": cleaned_text,
-                                "source": site_name,
-                                "url": target_url
-                            }
-                        else:
-                            logger.warning(f"No cleaned text could be extracted from {site_name}.")
-                    else:
-                        logger.warning(f"Could not find page content in result for {site_name}. Available attributes: {dir(result)}")
-                elif result.error_message:
-                    logger.warning(f"Scraping page failed for {site_name} ({target_url}): {result.error_message}")
+            logger.info(f"Attempting to load content from {site_name}...")
+            
+            # Use WebBaseLoader to fetch and parse the content
+            loader = WebBaseLoader(target_url)
+            docs = loader.load()
+            
+            if docs and docs[0].page_content:
+                # Get the full page content
+                full_page_content = docs[0].page_content
+                logger.info(f"Successfully loaded content from {site_name}. Length: {len(full_page_content)} characters.")
+                
+                # Clean the HTML content
+                cleaned_text = clean_scraped_html(full_page_content, site_name)
+                
+                if cleaned_text:
+                    logger.success(f"Successfully scraped and cleaned data from {site_name}.")
+                    return {
+                        "text": cleaned_text,
+                        "source": site_name,
+                        "url": target_url
+                    }
                 else:
-                    logger.debug(f"Scraping attempt for {site_name} yielded no content or error message.")
-
-        except asyncio.TimeoutError:
-            logger.warning(f"Scraping timed out for {site_name} ({target_url})")
+                    logger.warning(f"No cleaned text could be extracted from {site_name}.")
+            else:
+                logger.warning(f"Could not retrieve content from {site_name}.")
+                
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Request failed for {site_name} ({target_url}): {e}")
         except Exception as e:
             logger.error(f"Unexpected error during web scraping for {site_name} ({target_url}): {e}", exc_info=True)
 
