@@ -608,22 +608,33 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                 results = await crawler.arun_many(urls=[target_url], config=run_config)
                 result = results[0]
 
-                if result.success and result.page_content:
-                    # Get the full page content
-                    full_page_content = result.page_content
+                if result.success:
+                    # Get the full page content - try different possible attributes
+                    full_page_content = None
+                    if hasattr(result, 'content'):
+                        full_page_content = result.content
+                    elif hasattr(result, 'text'):
+                        full_page_content = result.text
+                    elif hasattr(result, 'html'):
+                        full_page_content = result.html
+                    elif hasattr(result, 'body'):
+                        full_page_content = result.body
                     
-                    # Clean the HTML content
-                    cleaned_text = clean_scraped_html(full_page_content, site_name)
-                    
-                    if cleaned_text:
-                        logger.success(f"Successfully scraped and cleaned data from {site_name}.")
-                        return {
-                            "text": cleaned_text,
-                            "source": site_name,
-                            "url": target_url
-                        }
+                    if full_page_content:
+                        # Clean the HTML content
+                        cleaned_text = clean_scraped_html(full_page_content, site_name)
+                        
+                        if cleaned_text:
+                            logger.success(f"Successfully scraped and cleaned data from {site_name}.")
+                            return {
+                                "text": cleaned_text,
+                                "source": site_name,
+                                "url": target_url
+                            }
+                        else:
+                            logger.warning(f"No cleaned text could be extracted from {site_name}.")
                     else:
-                        logger.warning(f"No cleaned text could be extracted from {site_name}.")
+                        logger.warning(f"Could not find page content in result for {site_name}. Available attributes: {dir(result)}")
                 elif result.error_message:
                     logger.warning(f"Scraping page failed for {site_name} ({target_url}): {result.error_message}")
                 else:
