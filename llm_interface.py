@@ -459,10 +459,13 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                  cache_mode=CacheMode.BYPASS,
                  js_code=[js_code] if js_code else None,
                  page_timeout=20000,
-                 verbose=False, # Set to True for detailed crawl4ai logs
+                 verbose=True, # Enable verbose logging
                  extraction_strategy=JsonCssExtractionStrategy(extraction_schema) # Add strategy
             )
-        browser_config = BrowserConfig(verbose=False) # Headless default
+        browser_config = BrowserConfig(
+            verbose=True, # Enable verbose browser logging
+            headless=False # Try with visible browser for debugging
+        )
 
         try:
             async with AsyncWebCrawler(config=browser_config) as crawler:
