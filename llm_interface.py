@@ -770,15 +770,14 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
             browser_config = BrowserConfig(
                 browser_type="chromium",
                 headless=True,
-                verbose=False,  # Reduced noise since we have our own logging
-                interaction_script=site["interaction_script"].format(part_number=part_number)
+                verbose=False  # Reduced noise since we have our own logging
             )
 
             # Configure the crawler with proper timing and waiting
             config = CrawlerRunConfig(
                 page_timeout=8000,         # 8 seconds maximum per page
                 wait_until="networkidle",  # Wait for JS/XHR silence
-                js_code=site["interaction_script"].format(part_number=part_number),
+                js_code=site["interaction_script"].format(part_number=part_number),  # Interaction script goes here
                 deep_crawl_strategy=BestFirstCrawlingStrategy(
                     max_depth=2,
                     include_external=False,
