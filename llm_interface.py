@@ -757,9 +757,30 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
             browser_config = BrowserConfig(
                 verbose=True,
                 headless=True,
-                wait_for_network_idle=True,
                 wait_time=site["wait_time"],
-                scroll_script=site["scroll_script"].format(part_number=part_number)
+                scroll_script=site["scroll_script"].format(part_number=part_number),
+                # Add network idle waiting through JavaScript
+                pre_navigation_script="""
+                    window.addEventListener('load', function() {
+                        let networkIdle = false;
+                        let timeoutId;
+                        
+                        function checkNetworkIdle() {
+                            if (performance.getEntriesByType('resource').length > 0) {
+                                clearTimeout(timeoutId);
+                                timeoutId = setTimeout(() => {
+                                    networkIdle = true;
+                                }, 1000);
+                            }
+                        }
+                        
+                        const observer = new PerformanceObserver((list) => {
+                            checkNetworkIdle();
+                        });
+                        
+                        observer.observe({ entryTypes: ['resource'] });
+                    });
+                """
             )
 
             # Configure the crawler
