@@ -730,20 +730,30 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                         first_result = results[0]
                         logger.debug(f"First result attributes: {dir(first_result)}")
                         logger.debug(f"First result metadata: {first_result.metadata}")
+                        if hasattr(first_result, '_results'):
+                            logger.debug(f"First result _results type: {type(first_result._results)}")
+                            logger.debug(f"First result _results attributes: {dir(first_result._results)}")
                     
                     # Sort results by score and get the best one
                     best_result = max(results, key=lambda r: r.metadata.get('score', 0))
                     
-                    # Try multiple ways to get the content
+                    # Try to get content from _results
                     full_page_content = None
-                    if hasattr(best_result, 'page_content'):
-                        full_page_content = best_result.page_content
-                    elif hasattr(best_result, 'html_content'):
-                        full_page_content = best_result.html_content
-                    elif hasattr(best_result, 'content'):
-                        full_page_content = best_result.content
-                    elif hasattr(best_result, 'text'):
-                        full_page_content = best_result.text
+                    if hasattr(best_result, '_results'):
+                        # Try to get content from the first result in _results
+                        if isinstance(best_result._results, list) and best_result._results:
+                            first_inner_result = best_result._results[0]
+                            # Try multiple ways to get content from inner result
+                            if hasattr(first_inner_result, 'page_content'):
+                                full_page_content = first_inner_result.page_content
+                            elif hasattr(first_inner_result, 'html_content'):
+                                full_page_content = first_inner_result.html_content
+                            elif hasattr(first_inner_result, 'content'):
+                                full_page_content = first_inner_result.content
+                            elif hasattr(first_inner_result, 'text'):
+                                full_page_content = first_inner_result.text
+                            elif hasattr(first_inner_result, 'body'):
+                                full_page_content = first_inner_result.body
                     
                     if full_page_content:
                         logger.info(f"Successfully loaded content from {site_name}. Length: {len(full_page_content)} characters.")
@@ -757,12 +767,16 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                             return {
                                 "text": cleaned_text,
                                 "source": site_name,
-                                "url": best_result.url
+                                "url": best_result.url if hasattr(best_result, 'url') else target_url
                             }
                         else:
                             logger.warning(f"No cleaned text could be extracted from {site_name}.")
                     else:
                         logger.warning(f"Could not find page content in result for {site_name}. Available attributes: {dir(best_result)}")
+                        if hasattr(best_result, '_results'):
+                            logger.warning(f"_results type: {type(best_result._results)}")
+                            if isinstance(best_result._results, list) and best_result._results:
+                                logger.warning(f"First _results item attributes: {dir(best_result._results[0])}")
                 else:
                     logger.warning(f"No results found for {site_name}.")
 
