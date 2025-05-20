@@ -770,14 +770,7 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
             browser_config = BrowserConfig(
                 browser_type="chromium",
                 headless=True,
-                verbose=False,
-                args=[
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-accelerated-2d-canvas',
-                    '--disable-gpu'
-                ]
+                verbose=False
             )
 
             # Configure the crawler with more robust settings
@@ -785,6 +778,13 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                 page_timeout=15000,        # Increased timeout for Streamlit Cloud
                 wait_until="networkidle",  # Wait for JS/XHR silence
                 js_code=site["interaction_script"].format(part_number=part_number),
+                browser_args=[  # Browser arguments go here instead
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--disable-gpu'
+                ],
                 deep_crawl_strategy=BestFirstCrawlingStrategy(
                     max_depth=2,
                     include_external=False,
