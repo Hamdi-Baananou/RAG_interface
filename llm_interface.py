@@ -667,8 +667,8 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
             "url_template": "https://www.traceparts.com/en/search?CatalogPath=&KeepFilters=true&Keywords={part_number}&SearchAction=Keywords",
             "keywords": ["specification", "technical", "product", "details", "features"],
             "patterns": ["*product*", "*specification*", "*technical*"],
-            "scroll_script": """
-                async function scrollAndWait() {{
+            "navigation_script": """
+                async function handleNavigation() {{
                     // Wait for initial load
                     await new Promise(r => setTimeout(r, 5000));
                     
@@ -700,7 +700,7 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                         }}
                     }}
                 }}
-                return scrollAndWait();
+                return handleNavigation();
             """
         },
         {
@@ -708,8 +708,8 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
             "url_template": "https://www.mouser.com/Search/Refine?Keyword={part_number}",
             "keywords": ["specification", "technical", "product", "details", "features"],
             "patterns": ["*product*", "*specification*", "*technical*"],
-            "scroll_script": """
-                async function scrollAndWait() {{
+            "navigation_script": """
+                async function handleNavigation() {{
                     // Wait for initial load
                     await new Promise(r => setTimeout(r, 3000));
                     
@@ -727,7 +727,7 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                         }}
                     }}
                 }}
-                return scrollAndWait();
+                return handleNavigation();
             """
         }
     ]
@@ -754,30 +754,7 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
             # Configure the crawler with enhanced browser settings
             browser_config = BrowserConfig(
                 verbose=True,
-                headless=True,
-                scroll_script=site["scroll_script"].format(part_number=part_number),
-                # Add network idle waiting through JavaScript
-                pre_navigation_script="""
-                    window.addEventListener('load', function() {
-                        let networkIdle = false;
-                        let timeoutId;
-                        
-                        function checkNetworkIdle() {
-                            if (performance.getEntriesByType('resource').length > 0) {
-                                clearTimeout(timeoutId);
-                                timeoutId = setTimeout(() => {
-                                    networkIdle = true;
-                                }, 1000);
-                            }
-                        }
-                        
-                        const observer = new PerformanceObserver((list) => {
-                            checkNetworkIdle();
-                        });
-                        
-                        observer.observe({ entryTypes: ['resource'] });
-                    });
-                """
+                headless=True
             )
 
             # Configure the crawler
@@ -791,7 +768,8 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                 ),
                 scraping_strategy=LXMLWebScrapingStrategy(),
                 stream=False,
-                verbose=True
+                verbose=True,
+                pre_navigation_script=site["navigation_script"].format(part_number=part_number)
             )
 
             # Execute the crawl
