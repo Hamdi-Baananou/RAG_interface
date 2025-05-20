@@ -669,7 +669,7 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
             "patterns": ["*product*", "*specification*", "*technical*"],
             "wait_time": 5000,  # 5 seconds wait for dynamic content
             "scroll_script": """
-                async function scrollAndWait() {
+                async function scrollAndWait() {{
                     // Wait for initial load
                     await new Promise(r => setTimeout(r, 2000));
                     
@@ -689,18 +689,18 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                         !link.href.includes('search')
                     );
                     
-                    if (productLink) {
+                    if (productLink) {{
                         productLink.click();
                         await new Promise(r => setTimeout(r, 3000));
                         
                         // Scroll to specifications
                         const specsElement = document.querySelector('.tp-product-specifications, .technical-data-table');
-                        if (specsElement) {
-                            specsElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        if (specsElement) {{
+                            specsElement.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
                             await new Promise(r => setTimeout(r, 2000));
-                        }
-                    }
-                }
+                        }}
+                    }}
+                }}
                 return scrollAndWait();
             """
         },
@@ -711,24 +711,24 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
             "patterns": ["*product*", "*specification*", "*technical*"],
             "wait_time": 3000,  # 3 seconds wait for dynamic content
             "scroll_script": """
-                async function scrollAndWait() {
+                async function scrollAndWait() {{
                     // Wait for initial load
                     await new Promise(r => setTimeout(r, 2000));
                     
                     // Click first product result
                     const firstResult = document.querySelector('.product-list-item a');
-                    if (firstResult) {
+                    if (firstResult) {{
                         firstResult.click();
                         await new Promise(r => setTimeout(r, 2000));
                         
                         // Scroll to specifications
                         const specsElement = document.querySelector('.product-details-table, .specifications-table');
-                        if (specsElement) {
-                            specsElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        if (specsElement) {{
+                            specsElement.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
                             await new Promise(r => setTimeout(r, 1000));
-                        }
-                    }
-                }
+                        }}
+                    }}
+                }}
                 return scrollAndWait();
             """
         }
