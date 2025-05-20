@@ -672,33 +672,46 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                     // Wait for initial load
                     await new Promise(r => setTimeout(r, 5000));
                     
-                    // Scroll to bottom
-                    window.scrollTo(0, document.body.scrollHeight);
-                    await new Promise(r => setTimeout(r, 2000));
+                    // Look for search results container
+                    const searchResults = document.getElementById('search-results-items');
+                    if (!searchResults) {{
+                        console.log('Search results container not found');
+                        return false;
+                    }}
                     
-                    // Scroll back to top
-                    window.scrollTo(0, 0);
-                    await new Promise(r => setTimeout(r, 2000));
+                    // Find the card containing the exact part number
+                    const cards = searchResults.querySelectorAll('.card');
+                    let foundMatch = false;
                     
-                    // Look for and click on product link
-                    const links = Array.from(document.querySelectorAll('a'));
-                    const productLink = links.find(link => 
-                        link.href && 
-                        link.href.includes('{part_number}') && 
-                        !link.href.includes('search')
-                    );
-                    
-                    if (productLink) {{
-                        productLink.click();
-                        await new Promise(r => setTimeout(r, 5000));
-                        
-                        // Scroll to specifications
-                        const specsElement = document.querySelector('.tp-product-specifications, .technical-data-table');
-                        if (specsElement) {{
-                            specsElement.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
-                            await new Promise(r => setTimeout(r, 3000));
+                    for (const card of cards) {{
+                        const partNumberSpan = card.querySelector('.partnumber');
+                        if (partNumberSpan && partNumberSpan.textContent.trim() === '{part_number}') {{
+                            const link = card.querySelector('a.row');
+                            if (link) {{
+                                link.click();
+                                await new Promise(r => setTimeout(r, 5000));
+                                foundMatch = true;
+                                break;
+                            }}
                         }}
                     }}
+                    
+                    if (!foundMatch) {{
+                        console.log('No exact part number match found');
+                        return false;
+                    }}
+                    
+                    // Wait for product page to load
+                    await new Promise(r => setTimeout(r, 3000));
+                    
+                    // Scroll to specifications
+                    const specsElement = document.querySelector('.tp-product-specifications');
+                    if (specsElement) {{
+                        specsElement.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+                        await new Promise(r => setTimeout(r, 2000));
+                    }}
+                    
+                    return true;
                 }}
                 return handleNavigation();
             """
@@ -720,12 +733,14 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                         await new Promise(r => setTimeout(r, 3000));
                         
                         // Scroll to specifications
-                        const specsElement = document.querySelector('.product-details-table, .specifications-table');
+                        const specsElement = document.querySelector('.product-details-table');
                         if (specsElement) {{
                             specsElement.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
                             await new Promise(r => setTimeout(r, 2000));
                         }}
+                        return true;
                     }}
+                    return false;
                 }}
                 return handleNavigation();
             """
@@ -751,24 +766,27 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                 ContentTypeFilter(allowed_types=["text/html"])
             ])
 
-            # Configure the crawler with enhanced browser settings
+            # Configure the browser with current API parameters
             browser_config = BrowserConfig(
-                verbose=True,
+                browser_type="chromium",
                 headless=True,
-                page_interaction_script=site["interaction_script"].format(part_number=part_number)
+                verbose=False,  # Reduced noise since we have our own logging
+                interaction_script=site["interaction_script"].format(part_number=part_number)
             )
 
-            # Configure the crawler
+            # Configure the crawler with proper timing and waiting
             config = CrawlerRunConfig(
+                page_timeout=8000,         # 8 seconds maximum per page
+                wait_until="networkidle",  # Wait for JS/XHR silence
+                js_code=site["interaction_script"].format(part_number=part_number),
                 deep_crawl_strategy=BestFirstCrawlingStrategy(
                     max_depth=2,
                     include_external=False,
                     filter_chain=filter_chain,
                     url_scorer=keyword_scorer,
-                    max_pages=3  # Reduced to focus on main product page
+                    max_pages=3
                 ),
                 scraping_strategy=LXMLWebScrapingStrategy(),
-                stream=False,
                 verbose=True
             )
 
@@ -780,12 +798,12 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                     # Get the best result
                     best_result = max(results, key=lambda r: r.metadata.get('score', 0))
                     
-                    # Try multiple ways to get content
+                    # Try to get content with updated attribute names
                     content = None
                     if hasattr(best_result, '_results') and best_result._results:
                         first_result = best_result._results[0]
-                        # Try different content attributes
-                        for attr in ['html', 'cleaned_html', 'extracted_content', 'content']:
+                        # Try different content attributes including new 0.6+ names
+                        for attr in ['raw_html', 'clean_html', 'html', 'extracted_content', 'content']:
                             if hasattr(first_result, attr):
                                 content = getattr(first_result, attr)
                                 if content:
@@ -793,7 +811,6 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                     
                     if content:
                         logger.info(f"Successfully loaded content from {site_name}. Length: {len(content)} characters.")
-                        logger.debug(f"Content preview: {content[:500]}...")
                         
                         # Clean the HTML content
                         cleaned_text = clean_scraped_html(content, site_name)
