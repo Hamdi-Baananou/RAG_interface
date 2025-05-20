@@ -766,18 +766,25 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                 ContentTypeFilter(allowed_types=["text/html"])
             ])
 
-            # Configure the browser with current API parameters
+            # Configure the browser with Streamlit Cloud compatible settings
             browser_config = BrowserConfig(
                 browser_type="chromium",
                 headless=True,
-                verbose=False  # Reduced noise since we have our own logging
+                verbose=False,
+                args=[
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-accelerated-2d-canvas',
+                    '--disable-gpu'
+                ]
             )
 
-            # Configure the crawler with proper timing and waiting
+            # Configure the crawler with more robust settings
             config = CrawlerRunConfig(
-                page_timeout=8000,         # 8 seconds maximum per page
+                page_timeout=15000,        # Increased timeout for Streamlit Cloud
                 wait_until="networkidle",  # Wait for JS/XHR silence
-                js_code=site["interaction_script"].format(part_number=part_number),  # Interaction script goes here
+                js_code=site["interaction_script"].format(part_number=part_number),
                 deep_crawl_strategy=BestFirstCrawlingStrategy(
                     max_depth=2,
                     include_external=False,
@@ -789,44 +796,53 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                 verbose=True
             )
 
-            # Execute the crawl
-            async with AsyncWebCrawler(config=browser_config) as crawler:
-                results = await crawler.arun(target_url, config=config)
-                
-                if results and isinstance(results, list):
-                    # Get the best result
-                    best_result = max(results, key=lambda r: r.metadata.get('score', 0))
+            try:
+                # Execute the crawl with error handling
+                async with AsyncWebCrawler(config=browser_config) as crawler:
+                    results = await crawler.arun(target_url, config=config)
                     
-                    # Try to get content with updated attribute names
-                    content = None
-                    if hasattr(best_result, '_results') and best_result._results:
-                        first_result = best_result._results[0]
-                        # Try different content attributes including new 0.6+ names
-                        for attr in ['raw_html', 'clean_html', 'html', 'extracted_content', 'content']:
-                            if hasattr(first_result, attr):
-                                content = getattr(first_result, attr)
-                                if content:
-                                    break
-                    
-                    if content:
-                        logger.info(f"Successfully loaded content from {site_name}. Length: {len(content)} characters.")
+                    if results and isinstance(results, list):
+                        # Get the best result
+                        best_result = max(results, key=lambda r: r.metadata.get('score', 0))
                         
-                        # Clean the HTML content
-                        cleaned_text = clean_scraped_html(content, site_name)
+                        # Try to get content with updated attribute names
+                        content = None
+                        if hasattr(best_result, '_results') and best_result._results:
+                            first_result = best_result._results[0]
+                            # Try different content attributes including new 0.6+ names
+                            for attr in ['raw_html', 'clean_html', 'html', 'extracted_content', 'content']:
+                                if hasattr(first_result, attr):
+                                    content = getattr(first_result, attr)
+                                    if content:
+                                        break
                         
-                        if cleaned_text:
-                            logger.success(f"Successfully scraped and cleaned data from {site_name}.")
-                            return {
-                                "text": cleaned_text,
-                                "source": site_name,
-                                "url": best_result.url if hasattr(best_result, 'url') else target_url
-                            }
+                        if content:
+                            logger.info(f"Successfully loaded content from {site_name}. Length: {len(content)} characters.")
+                            
+                            # Clean the HTML content
+                            cleaned_text = clean_scraped_html(content, site_name)
+                            
+                            if cleaned_text:
+                                logger.success(f"Successfully scraped and cleaned data from {site_name}.")
+                                return {
+                                    "text": cleaned_text,
+                                    "source": site_name,
+                                    "url": best_result.url if hasattr(best_result, 'url') else target_url
+                                }
+                            else:
+                                logger.warning(f"No cleaned text could be extracted from {site_name}.")
                         else:
-                            logger.warning(f"No cleaned text could be extracted from {site_name}.")
+                            logger.warning(f"Could not find page content in result for {site_name}.")
                     else:
-                        logger.warning(f"Could not find page content in result for {site_name}.")
-                else:
-                    logger.warning(f"No results found for {site_name}.")
+                        logger.warning(f"No results found for {site_name}.")
+
+            except Exception as e:
+                logger.error(f"Unexpected error during web scraping for {site_name} ({target_url}): {str(e)}", exc_info=True)
+                # Try to get more detailed error information
+                if hasattr(e, '__cause__'):
+                    logger.error(f"Caused by: {str(e.__cause__)}")
+                if hasattr(e, '__context__'):
+                    logger.error(f"Context: {str(e.__context__)}")
 
         except Exception as e:
             logger.error(f"Unexpected error during web scraping for {site_name} ({target_url}): {e}", exc_info=True)
