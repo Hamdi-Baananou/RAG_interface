@@ -667,19 +667,18 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
             "url_template": "https://www.traceparts.com/en/search?CatalogPath=&KeepFilters=true&Keywords={part_number}&SearchAction=Keywords",
             "keywords": ["specification", "technical", "product", "details", "features"],
             "patterns": ["*product*", "*specification*", "*technical*"],
-            "wait_time": 5000,  # 5 seconds wait for dynamic content
             "scroll_script": """
                 async function scrollAndWait() {{
                     // Wait for initial load
-                    await new Promise(r => setTimeout(r, 2000));
+                    await new Promise(r => setTimeout(r, 5000));
                     
                     // Scroll to bottom
                     window.scrollTo(0, document.body.scrollHeight);
-                    await new Promise(r => setTimeout(r, 1000));
+                    await new Promise(r => setTimeout(r, 2000));
                     
                     // Scroll back to top
                     window.scrollTo(0, 0);
-                    await new Promise(r => setTimeout(r, 1000));
+                    await new Promise(r => setTimeout(r, 2000));
                     
                     // Look for and click on product link
                     const links = Array.from(document.querySelectorAll('a'));
@@ -691,13 +690,13 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                     
                     if (productLink) {{
                         productLink.click();
-                        await new Promise(r => setTimeout(r, 3000));
+                        await new Promise(r => setTimeout(r, 5000));
                         
                         // Scroll to specifications
                         const specsElement = document.querySelector('.tp-product-specifications, .technical-data-table');
                         if (specsElement) {{
                             specsElement.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
-                            await new Promise(r => setTimeout(r, 2000));
+                            await new Promise(r => setTimeout(r, 3000));
                         }}
                     }}
                 }}
@@ -709,23 +708,22 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
             "url_template": "https://www.mouser.com/Search/Refine?Keyword={part_number}",
             "keywords": ["specification", "technical", "product", "details", "features"],
             "patterns": ["*product*", "*specification*", "*technical*"],
-            "wait_time": 3000,  # 3 seconds wait for dynamic content
             "scroll_script": """
                 async function scrollAndWait() {{
                     // Wait for initial load
-                    await new Promise(r => setTimeout(r, 2000));
+                    await new Promise(r => setTimeout(r, 3000));
                     
                     // Click first product result
                     const firstResult = document.querySelector('.product-list-item a');
                     if (firstResult) {{
                         firstResult.click();
-                        await new Promise(r => setTimeout(r, 2000));
+                        await new Promise(r => setTimeout(r, 3000));
                         
                         // Scroll to specifications
                         const specsElement = document.querySelector('.product-details-table, .specifications-table');
                         if (specsElement) {{
                             specsElement.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
-                            await new Promise(r => setTimeout(r, 1000));
+                            await new Promise(r => setTimeout(r, 2000));
                         }}
                     }}
                 }}
@@ -757,7 +755,6 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
             browser_config = BrowserConfig(
                 verbose=True,
                 headless=True,
-                wait_time=site["wait_time"],
                 scroll_script=site["scroll_script"].format(part_number=part_number),
                 # Add network idle waiting through JavaScript
                 pre_navigation_script="""
