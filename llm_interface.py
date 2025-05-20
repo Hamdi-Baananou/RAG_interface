@@ -666,19 +666,71 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
             "name": "TraceParts",
             "url_template": "https://www.traceparts.com/en/search?CatalogPath=&KeepFilters=true&Keywords={part_number}&SearchAction=Keywords",
             "keywords": ["specification", "technical", "product", "details", "features"],
-            "patterns": ["*product*", "*specification*", "*technical*"]
+            "patterns": ["*product*", "*specification*", "*technical*"],
+            "wait_time": 5000,  # 5 seconds wait for dynamic content
+            "scroll_script": """
+                async function scrollAndWait() {
+                    // Wait for initial load
+                    await new Promise(r => setTimeout(r, 2000));
+                    
+                    // Scroll to bottom
+                    window.scrollTo(0, document.body.scrollHeight);
+                    await new Promise(r => setTimeout(r, 1000));
+                    
+                    // Scroll back to top
+                    window.scrollTo(0, 0);
+                    await new Promise(r => setTimeout(r, 1000));
+                    
+                    // Look for and click on product link
+                    const links = Array.from(document.querySelectorAll('a'));
+                    const productLink = links.find(link => 
+                        link.href && 
+                        link.href.includes('{part_number}') && 
+                        !link.href.includes('search')
+                    );
+                    
+                    if (productLink) {
+                        productLink.click();
+                        await new Promise(r => setTimeout(r, 3000));
+                        
+                        // Scroll to specifications
+                        const specsElement = document.querySelector('.tp-product-specifications, .technical-data-table');
+                        if (specsElement) {
+                            specsElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            await new Promise(r => setTimeout(r, 2000));
+                        }
+                    }
+                }
+                return scrollAndWait();
+            """
         },
         {
             "name": "Mouser",
             "url_template": "https://www.mouser.com/Search/Refine?Keyword={part_number}",
             "keywords": ["specification", "technical", "product", "details", "features"],
-            "patterns": ["*product*", "*specification*", "*technical*"]
-        },
-        {
-            "name": "TE Connectivity",
-            "url_template": "https://www.te.com/en/product-{part_number}.html",
-            "keywords": ["specification", "technical", "product", "details", "features"],
-            "patterns": ["*product*", "*specification*", "*technical*"]
+            "patterns": ["*product*", "*specification*", "*technical*"],
+            "wait_time": 3000,  # 3 seconds wait for dynamic content
+            "scroll_script": """
+                async function scrollAndWait() {
+                    // Wait for initial load
+                    await new Promise(r => setTimeout(r, 2000));
+                    
+                    // Click first product result
+                    const firstResult = document.querySelector('.product-list-item a');
+                    if (firstResult) {
+                        firstResult.click();
+                        await new Promise(r => setTimeout(r, 2000));
+                        
+                        // Scroll to specifications
+                        const specsElement = document.querySelector('.product-details-table, .specifications-table');
+                        if (specsElement) {
+                            specsElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            await new Promise(r => setTimeout(r, 1000));
+                        }
+                    }
+                }
+                return scrollAndWait();
+            """
         }
     ]
 
@@ -701,6 +753,15 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                 ContentTypeFilter(allowed_types=["text/html"])
             ])
 
+            # Configure the crawler with enhanced browser settings
+            browser_config = BrowserConfig(
+                verbose=True,
+                headless=True,
+                wait_for_network_idle=True,
+                wait_time=site["wait_time"],
+                scroll_script=site["scroll_script"].format(part_number=part_number)
+            )
+
             # Configure the crawler
             config = CrawlerRunConfig(
                 deep_crawl_strategy=BestFirstCrawlingStrategy(
@@ -708,16 +769,11 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                     include_external=False,
                     filter_chain=filter_chain,
                     url_scorer=keyword_scorer,
-                    max_pages=5  # Limit to 5 pages to avoid excessive crawling
+                    max_pages=3  # Reduced to focus on main product page
                 ),
                 scraping_strategy=LXMLWebScrapingStrategy(),
-                stream=False,  # Changed to False to avoid streaming issues
+                stream=False,
                 verbose=True
-            )
-
-            browser_config = BrowserConfig(
-                verbose=True,
-                headless=True
             )
 
             # Execute the crawl
@@ -725,42 +781,26 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                 results = await crawler.arun(target_url, config=config)
                 
                 if results and isinstance(results, list):
-                    # Log all available attributes of the first result for debugging
-                    if results:
-                        first_result = results[0]
-                        logger.debug(f"First result attributes: {dir(first_result)}")
-                        logger.debug(f"First result metadata: {first_result.metadata}")
-                        if hasattr(first_result, '_results'):
-                            logger.debug(f"First result _results type: {type(first_result._results)}")
-                            logger.debug(f"First result _results attributes: {dir(first_result._results)}")
-                    
-                    # Sort results by score and get the best one
+                    # Get the best result
                     best_result = max(results, key=lambda r: r.metadata.get('score', 0))
                     
-                    # Try to get content from _results
-                    full_page_content = None
-                    if hasattr(best_result, '_results'):
-                        # Try to get content from the first result in _results
-                        if isinstance(best_result._results, list) and best_result._results:
-                            first_inner_result = best_result._results[0]
-                            # Try multiple ways to get content from inner result
-                            if hasattr(first_inner_result, 'page_content'):
-                                full_page_content = first_inner_result.page_content
-                            elif hasattr(first_inner_result, 'html_content'):
-                                full_page_content = first_inner_result.html_content
-                            elif hasattr(first_inner_result, 'content'):
-                                full_page_content = first_inner_result.content
-                            elif hasattr(first_inner_result, 'text'):
-                                full_page_content = first_inner_result.text
-                            elif hasattr(first_inner_result, 'body'):
-                                full_page_content = first_inner_result.body
+                    # Try multiple ways to get content
+                    content = None
+                    if hasattr(best_result, '_results') and best_result._results:
+                        first_result = best_result._results[0]
+                        # Try different content attributes
+                        for attr in ['html', 'cleaned_html', 'extracted_content', 'content']:
+                            if hasattr(first_result, attr):
+                                content = getattr(first_result, attr)
+                                if content:
+                                    break
                     
-                    if full_page_content:
-                        logger.info(f"Successfully loaded content from {site_name}. Length: {len(full_page_content)} characters.")
-                        logger.debug(f"Content preview: {full_page_content[:500]}...")
+                    if content:
+                        logger.info(f"Successfully loaded content from {site_name}. Length: {len(content)} characters.")
+                        logger.debug(f"Content preview: {content[:500]}...")
                         
                         # Clean the HTML content
-                        cleaned_text = clean_scraped_html(full_page_content, site_name)
+                        cleaned_text = clean_scraped_html(content, site_name)
                         
                         if cleaned_text:
                             logger.success(f"Successfully scraped and cleaned data from {site_name}.")
@@ -772,11 +812,7 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                         else:
                             logger.warning(f"No cleaned text could be extracted from {site_name}.")
                     else:
-                        logger.warning(f"Could not find page content in result for {site_name}. Available attributes: {dir(best_result)}")
-                        if hasattr(best_result, '_results'):
-                            logger.warning(f"_results type: {type(best_result._results)}")
-                            if isinstance(best_result._results, list) and best_result._results:
-                                logger.warning(f"First _results item attributes: {dir(best_result._results[0])}")
+                        logger.warning(f"Could not find page content in result for {site_name}.")
                 else:
                     logger.warning(f"No results found for {site_name}.")
 
