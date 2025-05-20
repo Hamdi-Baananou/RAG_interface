@@ -667,7 +667,7 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
             "url_template": "https://www.traceparts.com/en/search?CatalogPath=&KeepFilters=true&Keywords={part_number}&SearchAction=Keywords",
             "keywords": ["specification", "technical", "product", "details", "features"],
             "patterns": ["*product*", "*specification*", "*technical*"],
-            "navigation_script": """
+            "interaction_script": """
                 async function handleNavigation() {{
                     // Wait for initial load
                     await new Promise(r => setTimeout(r, 5000));
@@ -708,7 +708,7 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
             "url_template": "https://www.mouser.com/Search/Refine?Keyword={part_number}",
             "keywords": ["specification", "technical", "product", "details", "features"],
             "patterns": ["*product*", "*specification*", "*technical*"],
-            "navigation_script": """
+            "interaction_script": """
                 async function handleNavigation() {{
                     // Wait for initial load
                     await new Promise(r => setTimeout(r, 3000));
@@ -754,7 +754,8 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
             # Configure the crawler with enhanced browser settings
             browser_config = BrowserConfig(
                 verbose=True,
-                headless=True
+                headless=True,
+                page_interaction_script=site["interaction_script"].format(part_number=part_number)
             )
 
             # Configure the crawler
@@ -768,8 +769,7 @@ async def scrape_website_table_html(part_number: str) -> Optional[Dict[str, str]
                 ),
                 scraping_strategy=LXMLWebScrapingStrategy(),
                 stream=False,
-                verbose=True,
-                pre_navigation_script=site["navigation_script"].format(part_number=part_number)
+                verbose=True
             )
 
             # Execute the crawl
