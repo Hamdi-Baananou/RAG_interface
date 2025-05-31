@@ -17,6 +17,7 @@ import asyncio # Need asyncio for crawl4ai
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
 from crawl4ai.extraction_strategy import JsonCssExtractionStrategy
 from bs4 import BeautifulSoup # Import BeautifulSoup
+import re # Import re for regular expressions
 
 # --- Initialize LLM ---
 @logger.catch(reraise=True) # Keep catch for unexpected errors during init
@@ -229,14 +230,23 @@ WEBSITE_CONFIGS = [
             "})();"
         ),
         # Selector for the main container holding the features/specifications table
-        "table_selector": "#pdp-features-tabpanel" # Example selector - VERIFY!
+        "table_selector": "#pdp-features-tabpanel", # Example selector - VERIFY!
+        "part_number_pattern": r"^\d{7}-\d$"  # Pattern for TE part numbers like 2330171-2
+    },
+    {
+        "name": "Molex",
+        "base_url_template": "https://www.molex.com/en-us/products/part-detail/{part_number}#part-details",
+        "pre_extraction_js": None,  # No JS interaction needed for Molex
+        "table_selector": ".cmp-container",  # Main container for product details
+        "part_number_pattern": r"^\d{9}$"  # Pattern for Molex part numbers like 988211060
     },
     {
         "name": "TraceParts",
         "base_url_template": "https://www.traceparts.com/en/search?CatalogPath=&KeepFilters=true&Keywords={part_number}&SearchAction=Keywords",
         "pre_extraction_js": None, # Assuming no interaction needed for TraceParts search results page
         # Selector for the table or div containing technical data on TraceParts
-        "table_selector": ".technical-data" # Example selector - VERIFY!
+        "table_selector": ".technical-data", # Example selector - VERIFY!
+        "part_number_pattern": None  # No specific pattern for TraceParts
     },
     # Add other supplier websites here following the same structure
 ]
@@ -285,6 +295,25 @@ def clean_scraped_html(html_content: str, site_name: str) -> Optional[str]:
             else:
                  logger.warning(f"Could not find 'li.product-feature' items in the TE Connectivity HTML provided.")
 
+        elif site_name == "Molex":
+            # Find the main container
+            container = soup.find('div', class_='cmp-container')
+            if container:
+                # Find all specification rows
+                spec_rows = container.find_all('div', class_='specification-row')
+                for row in spec_rows:
+                    # Find label and value elements
+                    label = row.find('div', class_='specification-label')
+                    value = row.find('div', class_='specification-value')
+                    if label and value:
+                        label_text = label.get_text(strip=True).replace(':', '').strip()
+                        value_text = value.get_text(strip=True)
+                        if label_text and value_text:
+                            extracted_texts.append(f"{label_text}: {value_text}")
+                logger.info(f"Extracted {len(extracted_texts)} specifications from Molex HTML.")
+            else:
+                logger.warning("Could not find '.cmp-container' in the Molex HTML provided.")
+
         elif site_name == "TraceParts":
             # Add parsing logic specific to TraceParts HTML structure here
             # Example: Find a table and extract rows/cells
@@ -327,7 +356,18 @@ async def scrape_website_table_html(part_number: str) -> Optional[str]:
 
     logger.info(f"Attempting web scrape for features table / Part#: '{part_number}'...")
 
+    # Find the appropriate site configuration based on part number pattern
+    matching_site = None
     for site_config in WEBSITE_CONFIGS:
+        pattern = site_config.get("part_number_pattern")
+        if pattern and re.match(pattern, part_number):
+            matching_site = site_config
+            break
+
+    # If no matching site found, try all sites in order
+    sites_to_try = [matching_site] if matching_site else WEBSITE_CONFIGS
+
+    for site_config in sites_to_try:
         selector = site_config.get("table_selector")
         site_name = site_config.get("name", "Unknown Site") # Get site name for cleaner
         if not selector:
