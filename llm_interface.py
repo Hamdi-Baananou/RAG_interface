@@ -237,7 +237,7 @@ WEBSITE_CONFIGS = [
         "name": "Molex",
         "base_url_template": "https://www.molex.com/en-us/products/part-detail/{part_number}#part-details",
         "pre_extraction_js": None,  # No JS interaction needed for Molex
-        "table_selector": ".cmp-container",  # Main container for product details
+        "table_selector": ".cmp-component__contentWrapper",  # Main container for product details
         "part_number_pattern": r"^\d{9}$"  # Pattern for Molex part numbers like 988211060
     },
     {
