@@ -297,22 +297,56 @@ def clean_scraped_html(html_content: str, site_name: str) -> Optional[str]:
 
         elif site_name == "Molex":
             # Find the main container
-            container = soup.find('div', class_='cmp-container')
+            container = soup.find('div', class_='cmp-component__contentWrapper')
             if container:
-                # Find all specification rows
-                spec_rows = container.find_all('div', class_='specification-row')
-                for row in spec_rows:
-                    # Find label and value elements
-                    label = row.find('div', class_='specification-label')
-                    value = row.find('div', class_='specification-value')
-                    if label and value:
-                        label_text = label.get_text(strip=True).replace(':', '').strip()
-                        value_text = value.get_text(strip=True)
-                        if label_text and value_text:
-                            extracted_texts.append(f"{label_text}: {value_text}")
+                # Find all article sections
+                articles = container.find_all('div', class_='cmp-partdetails__article')
+                for article in articles:
+                    # Get section title
+                    section_title = article.find('h4', class_='cmp-partdetails__section-title')
+                    section_name = section_title.get_text(strip=True) if section_title else "General"
+                    
+                    # Try both mobile and desktop tables
+                    tables = article.find_all('table', class_=['cmp-partdetails__table-mobile', 'cmp-partdetails__table-desktop'])
+                    for table in tables:
+                        rows = table.find_all('tr')
+                        for row in rows:
+                            # Get header and data cells
+                            header = row.find('th')
+                            data = row.find('td')
+                            if header and data:
+                                label = header.get_text(strip=True).replace(':', '').strip()
+                                value = data.get_text(strip=True)
+                                if label and value:
+                                    # Include section name in the key for better context
+                                    extracted_texts.append(f"{section_name} - {label}: {value}")
+                
                 logger.info(f"Extracted {len(extracted_texts)} specifications from Molex HTML.")
             else:
-                logger.warning("Could not find '.cmp-container' in the Molex HTML provided.")
+                logger.warning("Could not find '.cmp-component__contentWrapper' in the Molex HTML provided.")
+                # Try alternative selectors if main container not found
+                alternative_containers = [
+                    soup.find('div', class_='cmp-partdetails'),
+                    soup.find('div', class_='product-details'),
+                    soup.find('div', {'id': 'part-details'})
+                ]
+                for container in alternative_containers:
+                    if container:
+                        # Try to find any tables that might contain spec data
+                        tables = container.find_all('table')
+                        for table in tables:
+                            rows = table.find_all('tr')
+                            for row in rows:
+                                header = row.find('th')
+                                data = row.find('td')
+                                if header and data:
+                                    label = header.get_text(strip=True).replace(':', '').strip()
+                                    value = data.get_text(strip=True)
+                                    if label and value:
+                                        extracted_texts.append(f"{label}: {value}")
+                        if extracted_texts:
+                            logger.info(f"Extracted {len(extracted_texts)} specifications using alternative selectors.")
+                            break
 
         elif site_name == "TraceParts":
             # Add parsing logic specific to TraceParts HTML structure here
