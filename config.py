@@ -8,7 +8,6 @@ load_dotenv()
 
 # --- API Keys ---
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-TRACEPARTS_API_KEY = os.getenv("TRACEPARTS_API_KEY")  # Add TraceParts API key
 
 # --- Model Configuration ---
 # Recommend using Langchain's Groq integration if possible
@@ -32,9 +31,8 @@ COLLECTION_NAME = os.getenv("COLLECTION_NAME", "pdf_qa_prod_collection") # Use t
 is_persistent = bool(CHROMA_PERSIST_DIRECTORY) # True if directory is set, False otherwise
 
 # --- Text Splitting Configuration ---
-# Removing CHUNK_SIZE and CHUNK_OVERLAP since we're not using them anymore
-# CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", (5000)))  # Removed
-# CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 75))  # Removed
+CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", (5000)))  # Restored
+CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", 75))  # Restored
 
 # --- Retriever Configuration ---
 RETRIEVER_K = int(os.getenv("RETRIEVER_K", 4)) # Renamed from RETRIEVER_SEARCH_K

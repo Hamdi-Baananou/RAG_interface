@@ -1262,4 +1262,3 @@ Determine HV qualification using this reasoning chain:
     Output format:
     HV QUALIFIED: [Yes/No]
 """
-

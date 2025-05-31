@@ -4,24 +4,24 @@ streamlit
 langchain
 langchain-community
 langchain-groq  # More direct way to use Groq with LangChain (Optional but recommended)
-langchain-huggingface
+langchain-huggingface # <-- Add this new package
 pymupdf
 sentence-transformers
 chromadb
 requests
 python-dotenv
-loguru
-tiktoken
-pysqlite3-binary
-crawl4ai==0.6.0  # Pin to specific version
-beautifulsoup4
-playwright  # Required by crawl4ai
-aiohttp  # Required by crawl4ai
+loguru # Or use standard logging
+tiktoken # Explicitly add tiktoken
+pysqlite3-binary # Required by chromadb on Streamlit Cloud for sqlite3 version >= 3.35.0
+# tiktoken # Often needed implicitly by langchain text splitters/models, good to add
+# faiss-cpu # Optional alternative vector store
+crawl4ai # Add crawl4ai for web scraping
+beautifulsoup4 # Add beautifulsoup4 for HTML cleaning
 
-numpy~=1.26.0
+numpy~=1.26.0 # <-- Pin numpy version explicitly
 
 # Pin core ML libraries to potentially compatible versions
-torch~=2.2.0
+torch~=2.2.0 # Or try 2.1.0 if 2.2 gives issues
 transformers~=4.40.0
-accelerate~=0.29.0
+accelerate~=0.29.0 # Match accelerate version that works well with transformers
 protobuf<3.21
