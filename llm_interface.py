@@ -237,7 +237,7 @@ WEBSITE_CONFIGS = [
         "name": "Molex",
         "base_url_template": "https://www.molex.com/en-us/products/part-detail/{part_number}#part-details",
         "pre_extraction_js": None,  # No JS interaction needed for Molex
-        "table_selector": ".cmp-component__contentWrapper",  # Main container for product details
+        "table_selector": "body",  # Get the entire page content
         "part_number_pattern": r"^\d{9}$"  # Pattern for Molex part numbers like 988211060
     },
     {
@@ -296,57 +296,52 @@ def clean_scraped_html(html_content: str, site_name: str) -> Optional[str]:
                  logger.warning(f"Could not find 'li.product-feature' items in the TE Connectivity HTML provided.")
 
         elif site_name == "Molex":
-            # Find the main container
-            container = soup.find('div', class_='cmp-component__contentWrapper')
-            if container:
-                # Find all article sections
-                articles = container.find_all('div', class_='cmp-partdetails__article')
-                for article in articles:
-                    # Get section title
-                    section_title = article.find('h4', class_='cmp-partdetails__section-title')
-                    section_name = section_title.get_text(strip=True) if section_title else "General"
+            # Find all tables in the page
+            tables = soup.find_all('table')
+            for table in tables:
+                # Get section title if available (look for nearest h4 before the table)
+                section_title = "General"
+                prev_element = table.find_previous(['h4', 'h3', 'h2'])
+                if prev_element:
+                    section_title = prev_element.get_text(strip=True)
+
+                # Process all rows in the table
+                rows = table.find_all('tr')
+                for row in rows:
+                    # Get header and data cells
+                    headers = row.find_all('th')
+                    data_cells = row.find_all('td')
                     
-                    # Try both mobile and desktop tables
-                    tables = article.find_all('table', class_=['cmp-partdetails__table-mobile', 'cmp-partdetails__table-desktop'])
-                    for table in tables:
-                        rows = table.find_all('tr')
-                        for row in rows:
-                            # Get header and data cells
-                            header = row.find('th')
-                            data = row.find('td')
-                            if header and data:
-                                label = header.get_text(strip=True).replace(':', '').strip()
-                                value = data.get_text(strip=True)
+                    # Handle both single and double-column layouts
+                    for i in range(0, len(headers), 2):
+                        if i < len(headers):
+                            label = headers[i].get_text(strip=True).replace(':', '').strip()
+                            if i < len(data_cells):
+                                value = data_cells[i].get_text(strip=True)
                                 if label and value:
-                                    # Include section name in the key for better context
-                                    extracted_texts.append(f"{section_name} - {label}: {value}")
-                
+                                    extracted_texts.append(f"{section_title} - {label}: {value}")
+                            
+                            # Check for second column if it exists
+                            if i + 1 < len(headers) and i + 1 < len(data_cells):
+                                label2 = headers[i + 1].get_text(strip=True).replace(':', '').strip()
+                                value2 = data_cells[i + 1].get_text(strip=True)
+                                if label2 and value2:
+                                    extracted_texts.append(f"{section_title} - {label2}: {value2}")
+
+            if extracted_texts:
                 logger.info(f"Extracted {len(extracted_texts)} specifications from Molex HTML.")
             else:
-                logger.warning("Could not find '.cmp-component__contentWrapper' in the Molex HTML provided.")
-                # Try alternative selectors if main container not found
-                alternative_containers = [
-                    soup.find('div', class_='cmp-partdetails'),
-                    soup.find('div', class_='product-details'),
-                    soup.find('div', {'id': 'part-details'})
-                ]
-                for container in alternative_containers:
-                    if container:
-                        # Try to find any tables that might contain spec data
-                        tables = container.find_all('table')
-                        for table in tables:
-                            rows = table.find_all('tr')
-                            for row in rows:
-                                header = row.find('th')
-                                data = row.find('td')
-                                if header and data:
-                                    label = header.get_text(strip=True).replace(':', '').strip()
-                                    value = data.get_text(strip=True)
-                                    if label and value:
-                                        extracted_texts.append(f"{label}: {value}")
-                        if extracted_texts:
-                            logger.info(f"Extracted {len(extracted_texts)} specifications using alternative selectors.")
-                            break
+                logger.warning("No specifications found in Molex HTML tables.")
+                # Try to find any key-value pairs in the page
+                for element in soup.find_all(['div', 'p', 'span']):
+                    text = element.get_text(strip=True)
+                    if ':' in text:
+                        parts = text.split(':', 1)
+                        if len(parts) == 2:
+                            label = parts[0].strip()
+                            value = parts[1].strip()
+                            if label and value:
+                                extracted_texts.append(f"{label}: {value}")
 
         elif site_name == "TraceParts":
             # Add parsing logic specific to TraceParts HTML structure here
