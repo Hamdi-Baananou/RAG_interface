@@ -195,22 +195,29 @@ async def process_uploaded_pdfs(uploaded_files: List[BinaryIO], temp_dir: str = 
             with open(file_path, "wb") as f:
                 f.write(uploaded_file.getvalue())
         
-        # Process PDFs in parallel
-        tasks = []
-        for file_path in saved_file_paths:
-            file_basename = os.path.basename(file_path)
-            # Create a task for each PDF
-            task = asyncio.create_task(
-                process_single_pdf(file_path, file_basename, client, model_name, text_splitter)
-            )
-            tasks.append(task)
-        
-        # Wait for all PDFs to be processed
-        results = await asyncio.gather(*tasks)
-        
-        # Combine all results
-        for docs in results:
-            all_docs.extend(docs)
+        # Process PDFs in parallel using ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(len(saved_file_paths), 4)) as executor:
+            # Create tasks for each PDF
+            loop = asyncio.get_event_loop()
+            tasks = []
+            for file_path in saved_file_paths:
+                file_basename = os.path.basename(file_path)
+                # Create a task that runs in the thread pool
+                task = loop.run_in_executor(
+                    executor,
+                    lambda p, b: asyncio.run(process_single_pdf(p, b, client, model_name, text_splitter)),
+                    file_path,
+                    file_basename
+                )
+                tasks.append(task)
+            
+            # Wait for all PDFs to be processed
+            results = await asyncio.gather(*tasks)
+            
+            # Combine all results
+            for docs in results:
+                if docs:  # Check if docs is not None
+                    all_docs.extend(docs)
             
     finally:
         # Clean up temporary files

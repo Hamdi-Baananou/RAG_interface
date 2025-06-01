@@ -320,16 +320,44 @@ with st.sidebar:
                         loop = asyncio.new_event_loop()
                         asyncio.set_event_loop(loop)
                     
-                    # Run the async PDF processing
-                    processed_docs = loop.run_until_complete(
-                        process_uploaded_pdfs(uploaded_files, temp_dir)
-                    )
+                    # Start both PDF and web processing in parallel
+                    async def process_all():
+                        # Start PDF processing
+                        pdf_task = asyncio.create_task(
+                            process_uploaded_pdfs(uploaded_files, temp_dir)
+                        )
+                        
+                        # Start web processing if part number is provided
+                        web_task = None
+                        if st.session_state.get("part_number_input"):
+                            web_task = asyncio.create_task(
+                                process_web_urls([st.session_state.get("part_number_input")])
+                            )
+                        
+                        # Wait for both tasks to complete
+                        tasks = [pdf_task]
+                        if web_task:
+                            tasks.append(web_task)
+                        
+                        results = await asyncio.gather(*tasks, return_exceptions=True)
+                        
+                        # Process results
+                        pdf_docs = results[0] if not isinstance(results[0], Exception) else []
+                        web_docs = results[1] if len(results) > 1 and not isinstance(results[1], Exception) else []
+                        
+                        # Combine results, prioritizing web docs if available
+                        if web_docs:
+                            return web_docs
+                        return pdf_docs
+                    
+                    # Run the parallel processing
+                    processed_docs = loop.run_until_complete(process_all())
                     
                     processing_time = time.time() - start_time
-                    logger.info(f"PDF processing took {processing_time:.2f} seconds.")
+                    logger.info(f"Processing took {processing_time:.2f} seconds.")
                 except Exception as e:
-                    logger.error(f"Failed during PDF processing phase: {e}", exc_info=True)
-                    st.error(f"Error processing PDFs: {e}")
+                    logger.error(f"Failed during processing phase: {e}", exc_info=True)
+                    st.error(f"Error during processing: {e}")
                     processed_docs = []  # Ensure it's empty on error
 
             # --- Vector Store Indexing ---
