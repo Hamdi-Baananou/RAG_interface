@@ -303,9 +303,12 @@ with st.sidebar:
 
             filenames = [f.name for f in uploaded_files]
             logger.info(f"Starting processing for {len(filenames)} files: {', '.join(filenames)}")
+            
+            # Initialize processed_docs
+            processed_docs = []
+            
             # --- PDF Processing ---
             with st.spinner("Processing PDFs... Loading, cleaning, splitting..."):
-                processed_docs = None # Initialize
                 try:
                     start_time = time.time()
                     temp_dir = os.path.join(os.getcwd(), "temp_pdf_files")
@@ -315,9 +318,10 @@ with st.sidebar:
                 except Exception as e:
                     logger.error(f"Failed during PDF processing phase: {e}", exc_info=True)
                     st.error(f"Error processing PDFs: {e}")
+                    processed_docs = []  # Ensure it's empty on error
 
             # --- Vector Store Indexing ---
-            if processed_docs:
+            if processed_docs and len(processed_docs) > 0:
                 logger.info(f"Generated {len(processed_docs)} document chunks.")
                 with st.spinner("Indexing documents in vector store..."):
                     try:
