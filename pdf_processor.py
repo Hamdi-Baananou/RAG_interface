@@ -35,6 +35,7 @@ def process_uploaded_pdfs(uploaded_files: List[BinaryIO], temp_dir: str = "temp_
     """Process uploaded PDFs using Mistral Vision for better text extraction."""
     all_docs = []
     saved_file_paths = []
+    total_pages_processed = 0
     
     # Create temp directory if it doesn't exist
     os.makedirs(temp_dir, exist_ok=True)
@@ -83,15 +84,17 @@ Output only the generated Markdown content.
             with open(file_path, "wb") as f:
                 f.write(uploaded_file.getvalue())
             
+            pdf_document = None
             try:
                 logger.info(f"Processing PDF: {file_basename}")
                 # Open PDF with PyMuPDF
                 pdf_document = fitz.open(file_path)
-                logger.info(f"Successfully opened PDF with {len(pdf_document)} pages")
+                total_pages = len(pdf_document)
+                logger.info(f"Successfully opened PDF with {total_pages} pages")
                 
-                for page_num in range(len(pdf_document)):
+                for page_num in range(total_pages):
                     logger.info(f"\n{'='*50}")
-                    logger.info(f"Processing page {page_num + 1}/{len(pdf_document)} of {file_basename}")
+                    logger.info(f"Processing page {page_num + 1}/{total_pages} of {file_basename}")
                     logger.info(f"{'='*50}\n")
                     
                     try:
@@ -154,17 +157,23 @@ Output only the generated Markdown content.
                                 all_docs.append(chunk_doc)
                             
                             logger.success(f"Successfully processed page {page_num + 1} from {file_basename}")
+                            total_pages_processed += 1
                         else:
                             logger.warning(f"No content extracted from page {page_num + 1} of {file_basename}")
                             
                     except Exception as e:
                         logger.error(f"Error processing page {page_num + 1} with Mistral Vision: {e}")
                 
-                # Close the PDF document
-                pdf_document.close()
-                
             except Exception as e:
                 logger.error(f"Error processing {file_basename}: {e}", exc_info=True)
+            finally:
+                # Close the PDF document if it was opened
+                if pdf_document is not None:
+                    try:
+                        pdf_document.close()
+                        logger.debug(f"Closed PDF document: {file_basename}")
+                    except Exception as e:
+                        logger.warning(f"Error closing PDF document {file_basename}: {e}")
                 
     finally:
         # Clean up temporary files
@@ -179,7 +188,7 @@ Output only the generated Markdown content.
         logger.error("No text could be extracted from any provided PDF files.")
     else:
         logger.info("\nProcessing Summary:")
-        logger.info(f"Total pages processed: {len(pdf_document) if 'pdf_document' in locals() else 0}")
+        logger.info(f"Total pages processed: {total_pages_processed}")
         logger.info(f"Total chunks created: {len(all_docs)}")
     
     return all_docs
