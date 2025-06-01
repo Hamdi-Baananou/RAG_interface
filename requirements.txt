@@ -25,3 +25,8 @@ torch~=2.2.0 # Or try 2.1.0 if 2.2 gives issues
 transformers~=4.40.0
 accelerate~=0.29.0 # Match accelerate version that works well with transformers
 protobuf<3.21
+
+# New dependencies for Mistral Vision and PDF processing
+mistralai>=0.0.7
+pdf2image>=1.16.3
+Pillow>=10.0.0

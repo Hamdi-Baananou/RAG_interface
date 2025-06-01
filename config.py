@@ -8,6 +8,7 @@ load_dotenv()
 
 # --- API Keys ---
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")  # Add Mistral API key
 
 # --- Model Configuration ---
 # Recommend using Langchain's Groq integration if possible
@@ -15,6 +16,9 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 LLM_MODEL_NAME = os.getenv("LLM_MODEL_NAME", "qwen-qwq-32b") # Reverted to a known good default
 # LLM_MODEL_NAME = "qwen-qwq-32b" # Your original choice via requests
 # GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions" # Needed if using raw requests
+
+# --- Vision Model Configuration ---
+VISION_MODEL_NAME = os.getenv("VISION_MODEL_NAME", "mistral-small-latest")  # Add vision model name
 
 # --- Embedding Configuration ---
 EMBEDDING_MODEL_NAME = os.getenv("EMBEDDING_MODEL_NAME", "sentence-transformers/all-MiniLM-L6-v2")
@@ -48,6 +52,9 @@ LLM_MAX_OUTPUT_TOKENS = int(os.getenv("LLM_MAX_OUTPUT_TOKENS", 31550))
 if not GROQ_API_KEY:
     # In a real app, might raise specific error or handle differently
     print("Warning: GROQ_API_KEY not found in environment variables.")
+
+if not MISTRAL_API_KEY:
+    print("Warning: MISTRAL_API_KEY not found in environment variables.")
 
 # --- Simplified CHROMA_SETTINGS attribute for app.py check ---
 # Define a simple object or dictionary that app.py can check for is_persistent
