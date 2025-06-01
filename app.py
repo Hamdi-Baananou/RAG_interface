@@ -16,6 +16,7 @@ import re # Import the 're' module for regular expressions
 import asyncio # Add asyncio import
 import subprocess # To run playwright install
 from typing import List
+from langchain.docstore.document import Document
 
 # --- Install Playwright browsers needed by crawl4ai --- 
 # This should run on startup in the Streamlit Cloud environment
