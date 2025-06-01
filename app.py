@@ -137,6 +137,29 @@ from extraction_prompts_web import (
     HV_QUALIFIED_WEB_PROMPT
 )
 
+async def process_web_urls(urls: List[str]) -> List[Document]:
+    """Process web URLs and return documents."""
+    web_docs = []
+    for url in urls:
+        try:
+            # Scrape the website table HTML
+            table_html = await scrape_website_table_html(url)
+            if table_html:
+                # Create a document from the scraped HTML
+                doc = Document(
+                    page_content=table_html,
+                    metadata={
+                        'source': f'web_{url}',
+                        'type': 'web_scrape'
+                    }
+                )
+                web_docs.append(doc)
+                logger.info(f"Successfully scraped data from {url}")
+            else:
+                logger.warning(f"No data found for {url}")
+        except Exception as e:
+            logger.error(f"Error processing URL {url}: {e}")
+    return web_docs
 
 # --- Streamlit Page Configuration ---
 st.set_page_config(
@@ -1068,27 +1091,3 @@ def process_files(uploaded_files, urls):
         return st.session_state.pdf_processing_results
     
     return []
-
-async def process_web_urls(urls: List[str]) -> List[Document]:
-    """Process web URLs and return documents."""
-    web_docs = []
-    for url in urls:
-        try:
-            # Scrape the website table HTML
-            table_html = await scrape_website_table_html(url)
-            if table_html:
-                # Create a document from the scraped HTML
-                doc = Document(
-                    page_content=table_html,
-                    metadata={
-                        'source': f'web_{url}',
-                        'type': 'web_scrape'
-                    }
-                )
-                web_docs.append(doc)
-                logger.info(f"Successfully scraped data from {url}")
-            else:
-                logger.warning(f"No data found for {url}")
-        except Exception as e:
-            logger.error(f"Error processing URL {url}: {e}")
-    return web_docs
