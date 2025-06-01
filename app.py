@@ -17,6 +17,8 @@ import asyncio # Add asyncio import
 import subprocess # To run playwright install
 from typing import List
 from langchain.docstore.document import Document
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 
 # --- Install Playwright browsers needed by crawl4ai --- 
 # This should run on startup in the Streamlit Cloud environment
@@ -1091,3 +1093,168 @@ def process_files(uploaded_files, urls):
         return st.session_state.pdf_processing_results
     
     return []
+
+# Add before the main processing logic
+def update_health_check():
+    """Update the health check timestamp."""
+    st.session_state.last_health_check = time.time()
+
+def check_health_check_timeout():
+    """Check if we're approaching the health check timeout."""
+    if 'last_health_check' not in st.session_state:
+        st.session_state.last_health_check = time.time()
+        return False
+    
+    elapsed = time.time() - st.session_state.last_health_check
+    return elapsed > (config.HEALTH_CHECK_TIMEOUT - config.HEALTH_CHECK_GRACE_PERIOD)
+
+async def process_attribute_batch(attributes_batch, chain, is_web=False):
+    """Process a batch of attributes in parallel."""
+    tasks = []
+    for prompt_name, instructions in attributes_batch.items():
+        attribute_key = prompt_name
+        instruction = instructions["web" if is_web else "pdf"]
+        
+        input_data = {
+            "cleaned_web_data" if is_web else "extraction_instructions": instruction,
+            "attribute_key": attribute_key,
+            "part_number": st.session_state.get("part_number_input", "Not Provided")
+        }
+        
+        task = asyncio.create_task(
+            _invoke_chain_and_process(chain, input_data, f"{attribute_key} ({'Web' if is_web else 'PDF'})")
+        )
+        tasks.append((prompt_name, task))
+    
+    results = {}
+    for prompt_name, task in tasks:
+        try:
+            result = await task
+            results[prompt_name] = result
+            update_health_check()  # Update health check after each successful processing
+        except Exception as e:
+            logger.error(f"Error processing {prompt_name}: {e}")
+            results[prompt_name] = f'{{"error": "Exception during processing: {e}"}}'
+    
+    return results
+
+# Replace the existing attribute processing logic with this new implementation
+async def process_all_attributes(prompts_to_run, web_chain, pdf_chain, scraped_table_html):
+    """Process all attributes with parallel processing and health check handling."""
+    intermediate_results = {}
+    pdf_fallback_needed = []
+    
+    # Process web data if available
+    if scraped_table_html:
+        # Split attributes into batches for parallel processing
+        attribute_batches = [dict(list(prompts_to_run.items())[i:i + config.MAX_PARALLEL_ATTRIBUTES]) 
+                           for i in range(0, len(prompts_to_run), config.MAX_PARALLEL_ATTRIBUTES)]
+        
+        for batch in attribute_batches:
+            if check_health_check_timeout():
+                logger.warning("Approaching health check timeout, switching to PDF processing")
+                pdf_fallback_needed.extend(batch.keys())
+                continue
+                
+            batch_results = await process_attribute_batch(batch, web_chain, is_web=True)
+            
+            for prompt_name, result in batch_results.items():
+                # Process result and determine if PDF fallback is needed
+                try:
+                    parsed_json = json.loads(result.strip())
+                    if isinstance(parsed_json, dict):
+                        if prompt_name in parsed_json:
+                            value = str(parsed_json[prompt_name])
+                            if "not found" in value.lower() or value.strip() == "":
+                                pdf_fallback_needed.append(prompt_name)
+                        elif "error" in parsed_json:
+                            pdf_fallback_needed.append(prompt_name)
+                except:
+                    pdf_fallback_needed.append(prompt_name)
+                
+                intermediate_results[prompt_name] = {
+                    'Prompt Name': prompt_name,
+                    'Extracted Value': result,
+                    'Source': 'Web',
+                    'Latency (s)': 0.0  # Will be updated with actual latency
+                }
+    else:
+        pdf_fallback_needed = list(prompts_to_run.keys())
+    
+    # Process PDF fallback if needed
+    if pdf_fallback_needed:
+        pdf_batches = [pdf_fallback_needed[i:i + config.MAX_PARALLEL_ATTRIBUTES] 
+                      for i in range(0, len(pdf_fallback_needed), config.MAX_PARALLEL_ATTRIBUTES)]
+        
+        for batch in pdf_batches:
+            if check_health_check_timeout():
+                logger.error("Health check timeout reached during PDF processing")
+                break
+                
+            batch_prompts = {name: prompts_to_run[name] for name in batch}
+            batch_results = await process_attribute_batch(batch_prompts, pdf_chain, is_web=False)
+            
+            for prompt_name, result in batch_results.items():
+                if prompt_name in intermediate_results:
+                    intermediate_results[prompt_name].update({
+                        'Extracted Value': result,
+                        'Source': 'PDF'
+                    })
+                else:
+                    intermediate_results[prompt_name] = {
+                        'Prompt Name': prompt_name,
+                        'Extracted Value': result,
+                        'Source': 'PDF',
+                        'Latency (s)': 0.0
+                    }
+    
+    return intermediate_results
+
+# Update the main processing section to use the new parallel processing
+async def process_attributes_main():
+    """Main async function for processing attributes."""
+    if (st.session_state.pdf_chain and st.session_state.web_chain) and not st.session_state.extraction_performed:
+        # Initialize health check
+        update_health_check()
+        
+        # Get part number and scrape web data
+        part_number = st.session_state.get("part_number_input", "").strip()
+        scraped_table_html = None
+        
+        if part_number:
+            if (st.session_state.current_part_number_scraped == part_number and 
+                st.session_state.scraped_table_html_cache is not None):
+                scraped_table_html = st.session_state.scraped_table_html_cache
+            else:
+                with st.spinner("Scraping web data..."):
+                    try:
+                        scraped_table_html = await scrape_website_table_html(part_number)
+                        if scraped_table_html:
+                            st.session_state.scraped_table_html_cache = scraped_table_html
+                            st.session_state.current_part_number_scraped = part_number
+                    except Exception as e:
+                        logger.error(f"Web scraping error: {e}")
+        
+        # Process all attributes
+        with st.spinner("Processing attributes..."):
+            try:
+                intermediate_results = await process_all_attributes(
+                    prompts_to_run,
+                    st.session_state.web_chain,
+                    st.session_state.pdf_chain,
+                    scraped_table_html
+                )
+                
+                # Convert results to list and update session state
+                extraction_results_list = list(intermediate_results.values())
+                st.session_state.evaluation_results = extraction_results_list
+                st.session_state.extraction_performed = True
+                
+                st.success("Extraction complete!")
+            except Exception as e:
+                logger.error(f"Error during attribute processing: {e}")
+                st.error("Error during processing. Please try again.")
+
+# Call the async function
+if (st.session_state.pdf_chain and st.session_state.web_chain) and not st.session_state.extraction_performed:
+    asyncio.run(process_attributes_main())

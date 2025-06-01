@@ -48,6 +48,15 @@ LLM_MAX_OUTPUT_TOKENS = int(os.getenv("LLM_MAX_OUTPUT_TOKENS", 31550))
 # --- Logging ---
 # LOG_LEVEL = "INFO" # Can be set via environment if needed
 
+# --- Health Check Configuration ---
+HEALTH_CHECK_TIMEOUT = int(os.getenv("HEALTH_CHECK_TIMEOUT", 300))  # 5 minutes
+HEALTH_CHECK_INTERVAL = int(os.getenv("HEALTH_CHECK_INTERVAL", 30))  # 30 seconds
+HEALTH_CHECK_GRACE_PERIOD = int(os.getenv("HEALTH_CHECK_GRACE_PERIOD", 60))  # 1 minute grace period
+
+# --- Processing Configuration ---
+MAX_PARALLEL_ATTRIBUTES = int(os.getenv("MAX_PARALLEL_ATTRIBUTES", 4))  # Number of attributes to process in parallel
+ATTRIBUTE_CHUNK_SIZE = int(os.getenv("ATTRIBUTE_CHUNK_SIZE", 1000))  # Chunk size for attribute processing
+
 # --- Validation ---
 if not GROQ_API_KEY:
     # In a real app, might raise specific error or handle differently
