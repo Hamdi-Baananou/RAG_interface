@@ -51,7 +51,7 @@ install_playwright_browsers() # Run the installation check on script start
 
 # Import project modules
 import config
-from pdf_processor import process_uploaded_pdfs
+from pdf_processor import process_uploaded_pdfs, process_pdfs_in_background
 from vector_store import (
     get_embedding_function,
     setup_vector_store,
@@ -175,6 +175,14 @@ if 'scraped_table_html_cache' not in st.session_state:
     st.session_state.scraped_table_html_cache = None # Cache for scraped HTML for the current part number
 if 'current_part_number_scraped' not in st.session_state:
     st.session_state.current_part_number_scraped = None # Track which part number was last scraped for
+
+# Add new session state for background tasks
+if 'pdf_processing_task' not in st.session_state:
+    st.session_state.pdf_processing_task = None
+if 'pdf_processing_complete' not in st.session_state:
+    st.session_state.pdf_processing_complete = False
+if 'pdf_processing_results' not in st.session_state:
+    st.session_state.pdf_processing_results = None
 
 # --- Global Variables / Initialization ---
 # Initialize embeddings (this is relatively heavy, do it once)
@@ -972,3 +980,56 @@ else:
     
 
 # REMOVE the previous Q&A section entirely (already done)
+
+def process_files(uploaded_files, urls):
+    """Process uploaded files and URLs in parallel."""
+    start_time = time.time()
+    logger.info(f"Starting processing for {len(uploaded_files)} files: {[f.name for f in uploaded_files]}")
+    
+    # Start PDF processing in background if there are PDFs
+    if uploaded_files:
+        st.session_state.pdf_processing_task = process_pdfs_in_background(uploaded_files)
+        st.session_state.pdf_processing_complete = False
+        st.session_state.pdf_processing_results = None
+    
+    # Process web URLs immediately
+    web_docs = []
+    if urls:
+        try:
+            web_docs = process_web_urls(urls)
+            if web_docs:
+                logger.info(f"Successfully processed {len(web_docs)} web documents")
+                # If we have web results, we can use them immediately
+                return web_docs
+        except Exception as e:
+            logger.error(f"Error processing web URLs: {e}")
+    
+    # If no web results or web processing failed, wait for PDF processing
+    if st.session_state.pdf_processing_task and not st.session_state.pdf_processing_complete:
+        try:
+            # Wait for PDF processing to complete
+            pdf_docs = asyncio.run(st.session_state.pdf_processing_task)
+            st.session_state.pdf_processing_complete = True
+            st.session_state.pdf_processing_results = pdf_docs
+            logger.info(f"PDF processing completed with {len(pdf_docs)} documents")
+            return pdf_docs
+        except Exception as e:
+            logger.error(f"Error during PDF processing: {e}")
+            return []
+    
+    # If we have cached PDF results, use them
+    if st.session_state.pdf_processing_results:
+        return st.session_state.pdf_processing_results
+    
+    return []
+
+def process_web_urls(urls):
+    """Process web URLs and return documents."""
+    web_docs = []
+    for url in urls:
+        try:
+            # Your existing web processing code here
+            pass
+        except Exception as e:
+            logger.error(f"Error processing URL {url}: {e}")
+    return web_docs
