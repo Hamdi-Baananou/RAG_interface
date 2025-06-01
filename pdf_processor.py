@@ -6,7 +6,7 @@ import io
 from typing import List, BinaryIO
 from loguru import logger
 from PIL import Image
-from pdf2image import convert_from_path
+import fitz  # PyMuPDF
 from mistralai import Mistral
 from langchain.docstore.document import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -84,17 +84,24 @@ Output only the generated Markdown content.
                 f.write(uploaded_file.getvalue())
             
             try:
-                logger.info(f"Converting PDF to images: {file_basename}")
-                images = convert_from_path(file_path, dpi=300)
-                logger.info(f"Successfully converted {len(images)} pages")
+                logger.info(f"Processing PDF: {file_basename}")
+                # Open PDF with PyMuPDF
+                pdf_document = fitz.open(file_path)
+                logger.info(f"Successfully opened PDF with {len(pdf_document)} pages")
                 
-                for i, img in enumerate(images):
-                    page_num = i + 1
+                for page_num in range(len(pdf_document)):
                     logger.info(f"\n{'='*50}")
-                    logger.info(f"Processing page {page_num}/{len(images)} of {file_basename}")
+                    logger.info(f"Processing page {page_num + 1}/{len(pdf_document)} of {file_basename}")
                     logger.info(f"{'='*50}\n")
                     
                     try:
+                        # Get the page
+                        page = pdf_document[page_num]
+                        
+                        # Convert page to image with higher resolution
+                        pix = page.get_pixmap(matrix=fitz.Matrix(300/72, 300/72))
+                        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                        
                         # Encode image to base64
                         base64_image, image_format = encode_pil_image(img)
                         
@@ -139,19 +146,22 @@ Output only the generated Markdown content.
                                     page_content=chunk,
                                     metadata={
                                         'source': file_basename,
-                                        'page': page_num,
+                                        'page': page_num + 1,
                                         'chunk': j + 1,
                                         'total_chunks': len(chunks)
                                     }
                                 )
                                 all_docs.append(chunk_doc)
                             
-                            logger.success(f"Successfully processed page {page_num} from {file_basename}")
+                            logger.success(f"Successfully processed page {page_num + 1} from {file_basename}")
                         else:
-                            logger.warning(f"No content extracted from page {page_num} of {file_basename}")
+                            logger.warning(f"No content extracted from page {page_num + 1} of {file_basename}")
                             
                     except Exception as e:
-                        logger.error(f"Error processing page {page_num} with Mistral Vision: {e}")
+                        logger.error(f"Error processing page {page_num + 1} with Mistral Vision: {e}")
+                
+                # Close the PDF document
+                pdf_document.close()
                 
             except Exception as e:
                 logger.error(f"Error processing {file_basename}: {e}", exc_info=True)
@@ -169,7 +179,7 @@ Output only the generated Markdown content.
         logger.error("No text could be extracted from any provided PDF files.")
     else:
         logger.info("\nProcessing Summary:")
-        logger.info(f"Total pages processed: {len(images) if 'images' in locals() else 0}")
+        logger.info(f"Total pages processed: {len(pdf_document) if 'pdf_document' in locals() else 0}")
         logger.info(f"Total chunks created: {len(all_docs)}")
     
     return all_docs
