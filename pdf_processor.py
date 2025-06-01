@@ -50,7 +50,8 @@ def process_uploaded_pdfs(uploaded_files: List[BinaryIO], temp_dir: str = "temp_
     # Initialize Mistral client
     try:
         client = Mistral(api_key=os.getenv("MISTRAL_API_KEY"))
-        model_name = "mistral-small-latest"  # or "pixtral-12b-latest"
+        model_name = config.VISION_MODEL_NAME
+        logger.info(f"Initialized Mistral Vision client with model: {model_name}")
     except Exception as e:
         logger.error(f"Failed to initialize Mistral client: {e}")
         return []
@@ -89,7 +90,9 @@ Output only the generated Markdown content.
                 
                 for i, img in enumerate(images):
                     page_num = i + 1
-                    logger.info(f"Processing page {page_num}/{len(images)}")
+                    logger.info(f"\n{'='*50}")
+                    logger.info(f"Processing page {page_num}/{len(images)} of {file_basename}")
+                    logger.info(f"{'='*50}\n")
                     
                     try:
                         # Encode image to base64
@@ -110,6 +113,7 @@ Output only the generated Markdown content.
                         ]
                         
                         # Call Mistral Vision API
+                        logger.info("Sending page to Mistral Vision API...")
                         chat_response = client.chat.complete(
                             model=model_name,
                             messages=messages
@@ -119,8 +123,15 @@ Output only the generated Markdown content.
                         page_content = chat_response.choices[0].message.content
                         
                         if page_content:
+                            # Log the extracted content
+                            logger.info("\nExtracted Content:")
+                            logger.info("-" * 40)
+                            logger.info(page_content)
+                            logger.info("-" * 40)
+                            
                             # Split the content into chunks
                             chunks = text_splitter.split_text(page_content)
+                            logger.info(f"\nSplit content into {len(chunks)} chunks")
                             
                             # Create Document objects for each chunk
                             for j, chunk in enumerate(chunks):
@@ -156,6 +167,9 @@ Output only the generated Markdown content.
     
     if not all_docs:
         logger.error("No text could be extracted from any provided PDF files.")
+    else:
+        logger.info("\nProcessing Summary:")
+        logger.info(f"Total pages processed: {len(images) if 'images' in locals() else 0}")
+        logger.info(f"Total chunks created: {len(all_docs)}")
     
-    logger.info(f"Total document chunks processed: {len(all_docs)}")
     return all_docs
